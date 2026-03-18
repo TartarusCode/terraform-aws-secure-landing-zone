@@ -18,4 +18,17 @@ output "cloudtrail_name" {
   value       = aws_cloudtrail.main.name
 }
 
- 
+output "cloudwatch_log_group_name" {
+  description = "Name of the CloudWatch Log Group for CloudTrail (if enabled)"
+  value       = var.enable_cloudwatch_logs ? aws_cloudwatch_log_group.cloudtrail[0].name : null
+}
+
+output "cloudwatch_log_group_arn" {
+  description = "ARN of the CloudWatch Log Group for CloudTrail (if enabled)"
+  value       = var.enable_cloudwatch_logs ? aws_cloudwatch_log_group.cloudtrail[0].arn : null
+}
+
+output "access_logs_bucket_name" {
+  description = "Name of the S3 access logging bucket"
+  value       = aws_s3_bucket.access_logs.bucket
+}

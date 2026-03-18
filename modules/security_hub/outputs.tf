@@ -13,6 +13,11 @@ output "pci_standard_enabled" {
   value       = var.enable_security_hub && var.enable_pci_standard
 }
 
+output "fsbp_standard_enabled" {
+  description = "Whether AWS Foundational Security Best Practices standard is enabled"
+  value       = var.enable_security_hub && var.enable_fsbp_standard
+}
+
 output "action_targets_enabled" {
   description = "Whether Security Hub action targets are enabled"
   value       = var.enable_security_hub && var.enable_action_targets
@@ -21,4 +26,4 @@ output "action_targets_enabled" {
 output "insights_created" {
   description = "Number of Security Hub insights created"
   value       = var.enable_security_hub ? 2 : 0
-} 
+}

@@ -2,119 +2,272 @@ name: PR Checks
 
 on:
   pull_request:
-    branches: [ main ]
+    branches: [main]
+    paths:
+      - "**.tf"
+      - "**.hcl"
+      - ".github/workflows/pr-checks.yml"
+      - "test/**"
+
+concurrency:
+  group: pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
   security-events: write
+  pull-requests: read
 
 env:
-  AWS_DEFAULT_REGION: us-east-1
-  TF_LOG: INFO
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+  TERRAFORM_VERSION: "1.14.7"
+  TFLINT_VERSION: "v0.55.0"
 
 jobs:
-  fmt-lint:
-    name: Terraform Format and Lint
+  # ---------------------------------------------------------------
+  # Stage 1: Fast static checks (no cloud access needed)
+  # ---------------------------------------------------------------
+  fmt:
+    name: Terraform Format
     runs-on: ubuntu-latest
-    
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-      
-    - name: Setup Terraform
-      uses: hashicorp/setup-terraform@v3
-      with:
-        terraform_version: "1.5.0"
-        
-    - name: Terraform Format Check
-      run: terraform fmt -check -recursive
-      
-    - name: Setup TFLint
-      uses: terraform-linters/setup-tflint@v4
-      with:
-        tflint_version: v0.52.0
-        
-    - name: TFLint
-      run: tflint --init && tflint
+      - name: Checkout
+        uses: actions/checkout@v4
 
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive -diff
+
+  lint:
+    name: TFLint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Cache TFLint plugins
+        uses: actions/cache@v4
+        with:
+          path: ~/.tflint.d/plugins
+          key: tflint-${{ hashFiles('.tflint.hcl') }}
+          restore-keys: tflint-
+
+      - name: Setup TFLint
+        uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: ${{ env.TFLINT_VERSION }}
+
+      - name: Init TFLint
+        run: tflint --init
+
+      - name: Lint root module
+        run: tflint --recursive
+
+  # ---------------------------------------------------------------
+  # Stage 2: Validation (depends on format passing)
+  # ---------------------------------------------------------------
   validate:
-    name: Terraform Validate
+    name: Validate (${{ matrix.target }})
     runs-on: ubuntu-latest
-    
+    needs: [fmt]
+
     strategy:
+      fail-fast: false
       matrix:
-        example: [basic, full, advanced]
-    
-    steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-      
-    - name: Setup Terraform
-      uses: hashicorp/setup-terraform@v3
-      with:
-        terraform_version: "1.5.0"
-        
-    - name: Terraform Init and Validate
-      run: |
-        cd examples/${{ matrix.example }}
-        terraform init
-        terraform validate
+        target: [root, basic, full, advanced]
+        include:
+          - target: root
+            dir: "."
+          - target: basic
+            dir: "examples/basic"
+          - target: full
+            dir: "examples/full"
+          - target: advanced
+            dir: "examples/advanced"
 
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
+      - name: Cache Terraform providers
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ matrix.dir }}/.terraform
+            ${{ matrix.dir }}/.terraform.lock.hcl
+          key: terraform-${{ matrix.target }}-${{ hashFiles(format('{0}/**/*.tf', matrix.dir)) }}
+          restore-keys: terraform-${{ matrix.target }}-
+
+      - name: Terraform Init
+        working-directory: ${{ matrix.dir }}
+        run: terraform init -backend=false
+
+      - name: Terraform Validate
+        working-directory: ${{ matrix.dir }}
+        run: terraform validate
+
+  # ---------------------------------------------------------------
+  # Stage 3: Security scanning (runs in parallel with validation)
+  # ---------------------------------------------------------------
   security-scan:
-    name: Security Scan
+    name: Trivy Security Scan
     runs-on: ubuntu-latest
-    
-    steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-      
-    - name: Setup Terraform
-      uses: hashicorp/setup-terraform@v3
-      with:
-        terraform_version: "1.5.0"
-        
-    - name: Run tfsec
-      uses: aquasecurity/tfsec-sarif-action@v0.1.0
-      with:
-        sarif_file: tfsec.sarif     
-        
-    - name: Check if SARIF file exists
-      run: |
-        if [ -f tfsec.sarif ]; then
-          echo "SARIF file found:"
-          ls -la tfsec.sarif
-          echo "File content preview:"
-          head -20 tfsec.sarif
-        else
-          echo "SARIF file not found. Creating empty file for upload."
-          echo '{"version":"2.1.0","$schema":"https://json.schemastore.org/sarif-2.1.0-rtm.5.json","runs":[]}' > tfsec.sarif
-        fi
-        
-    - name: Upload tfsec results to GitHub Security tab
-      uses: github/codeql-action/upload-sarif@v3
-      if: always()
-      with:
-        sarif_file: tfsec.sarif
+    needs: [fmt]
 
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run Trivy (Terraform misconfiguration scan)
+        uses: aquasecurity/trivy-action@0.35.0
+        with:
+          scan-type: config
+          scan-ref: .
+          format: sarif
+          output: trivy-results.sarif
+          severity: CRITICAL,HIGH,MEDIUM
+          exit-code: 0
+
+      - name: Upload scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-results.sarif
+
+  # ---------------------------------------------------------------
+  # Stage 4: Compile check on test suite (no creds needed)
+  # ---------------------------------------------------------------
+  test-compile:
+    name: Test Suite Compile Check
+    runs-on: ubuntu-latest
+    needs: [fmt]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache-dependency-path: test/go.sum
+
+      - name: Verify dependencies
+        working-directory: test
+        run: |
+          go mod tidy -diff
+          go mod verify
+
+      - name: Compile test suite
+        working-directory: test
+        run: go build ./...
+
+      - name: Run go vet
+        working-directory: test
+        run: go vet ./...
+
+  # ---------------------------------------------------------------
+  # Stage 5: Documentation & structure checks
+  # ---------------------------------------------------------------
   documentation:
     name: Documentation Check
     runs-on: ubuntu-latest
-    
+
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-      
-    - name: Check README exists
-      run: test -f README.md
-      
-    - name: Check examples exist
-      run: |
-        test -d examples/basic
-        test -d examples/full
-        test -d examples/advanced
-        
-    - name: Check documentation files
-      run: |
-        test -f LICENSE
-        test -f CHANGELOG.md
-        test -d docs
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate module structure
+        run: |
+          echo "Checking required files..."
+          required_files=(
+            "README.md"
+            "LICENSE"
+            "CHANGELOG.md"
+            "main.tf"
+            "variables.tf"
+            "outputs.tf"
+          )
+          for f in "${required_files[@]}"; do
+            if [ ! -f "$f" ]; then
+              echo "FAIL: Missing required file: $f"
+              exit 1
+            fi
+            echo "  OK: $f"
+          done
+
+          echo ""
+          echo "Checking required directories..."
+          required_dirs=(
+            "docs"
+            "examples/basic"
+            "examples/full"
+            "examples/advanced"
+            "modules"
+            "test"
+          )
+          for d in "${required_dirs[@]}"; do
+            if [ ! -d "$d" ]; then
+              echo "FAIL: Missing required directory: $d"
+              exit 1
+            fi
+            echo "  OK: $d/"
+          done
+
+          echo ""
+          echo "Checking submodule structure..."
+          for mod_dir in modules/*/; do
+            for f in main.tf variables.tf outputs.tf; do
+              if [ ! -f "${mod_dir}${f}" ]; then
+                echo "FAIL: Missing ${mod_dir}${f}"
+                exit 1
+              fi
+            done
+            echo "  OK: ${mod_dir}"
+          done
+
+          echo ""
+          echo "All structure checks passed."
+
+  # ---------------------------------------------------------------
+  # Summary gate — branch protection should require this job
+  # ---------------------------------------------------------------
+  pr-status:
+    name: PR Status
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [fmt, lint, validate, security-scan, test-compile, documentation]
+    steps:
+      - name: Check results
+        run: |
+          echo "fmt:           ${{ needs.fmt.result }}"
+          echo "lint:          ${{ needs.lint.result }}"
+          echo "validate:      ${{ needs.validate.result }}"
+          echo "security-scan: ${{ needs.security-scan.result }}"
+          echo "test-compile:  ${{ needs.test-compile.result }}"
+          echo "documentation: ${{ needs.documentation.result }}"
+
+          if [[ "${{ needs.fmt.result }}" != "success" || \
+                "${{ needs.lint.result }}" != "success" || \
+                "${{ needs.validate.result }}" != "success" || \
+                "${{ needs.test-compile.result }}" != "success" || \
+                "${{ needs.documentation.result }}" != "success" ]]; then
+            echo ""
+            echo "One or more required checks failed."
+            exit 1
+          fi
+
+          echo ""
+          echo "All required checks passed."

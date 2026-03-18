@@ -1,4 +1,6 @@
-# Macie account
+data "aws_caller_identity" "current" {}
+data "aws_region" "current" {}
+
 resource "aws_macie2_account" "main" {
   count = var.enable_macie ? 1 : 0
 
@@ -6,16 +8,15 @@ resource "aws_macie2_account" "main" {
   status                       = "ENABLED"
 }
 
-# Macie classification job
 resource "aws_macie2_classification_job" "s3_scan" {
-  count = var.enable_macie && var.enable_s3_classification ? 1 : 0
+  count = var.enable_macie && var.enable_s3_classification && length(var.s3_buckets_to_scan) > 0 ? 1 : 0
 
   job_type = "ONE_TIME"
   name     = "s3-classification-job"
 
   s3_job_definition {
     bucket_definitions {
-      account_id = var.account_id
+      account_id = data.aws_caller_identity.current.account_id
       buckets    = var.s3_buckets_to_scan
     }
 
@@ -35,7 +36,6 @@ resource "aws_macie2_classification_job" "s3_scan" {
   depends_on = [aws_macie2_account.main]
 }
 
-# Macie custom data identifier
 resource "aws_macie2_custom_data_identifier" "custom_patterns" {
   for_each = var.enable_macie ? var.custom_data_identifiers : {}
 
@@ -48,7 +48,6 @@ resource "aws_macie2_custom_data_identifier" "custom_patterns" {
   depends_on = [aws_macie2_account.main]
 }
 
-# Macie findings filter
 resource "aws_macie2_findings_filter" "high_severity" {
   count = var.enable_macie ? 1 : 0
 
@@ -65,6 +64,3 @@ resource "aws_macie2_findings_filter" "high_severity" {
 
   depends_on = [aws_macie2_account.main]
 }
-
-# Data sources
-data "aws_region" "current" {} 

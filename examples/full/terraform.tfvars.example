@@ -1,18 +1,14 @@
-# AWS Account ID is automatically detected from AWS credentials
-# No need to specify account_id in terraform.tfvars
+# Unique name prefix for all resources (required)
+name_prefix = "my-org-prod"
 
 # AWS region (optional, defaults to us-east-1)
 region = "us-east-1"
 
-# CloudTrail S3 bucket name (required)
-# Must be globally unique
-cloudtrail_bucket_name = "my-org-cloudtrail-logs-2024"
+# CloudTrail S3 bucket suffix (will be prefixed with name_prefix)
+cloudtrail_bucket_name = "cloudtrail-logs"
 
-# GuardDuty findings bucket name (required if GuardDuty is enabled)
-guardduty_findings_bucket_name = "my-org-guardduty-findings-2024"
-
-
-
+# GuardDuty findings bucket suffix (will be prefixed with name_prefix)
+guardduty_findings_bucket_name = "guardduty-findings"
 
 # Budget configuration
 budget_limit_usd = 1000

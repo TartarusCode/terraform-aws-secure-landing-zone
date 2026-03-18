@@ -1,15 +1,29 @@
+data "aws_caller_identity" "current" {}
+data "aws_region" "current" {}
+
+locals {
+  account_id    = data.aws_caller_identity.current.account_id
+  region        = data.aws_region.current.region
+  create_bucket = var.enable_guardduty && var.guardduty_findings_bucket_name != ""
+  guardduty_bucket = local.create_bucket ? (
+    var.prevent_destroy ? aws_s3_bucket.guardduty_findings_protected[0] : aws_s3_bucket.guardduty_findings_unprotected[0]
+  ) : null
+}
+
+# -----------------------------------------------------------------------------
 # GuardDuty Detector
+# -----------------------------------------------------------------------------
+
 resource "aws_guardduty_detector" "main" {
   count = var.enable_guardduty ? 1 : 0
 
   enable = true
 
   tags = merge(var.tags, {
-    Name = "landing-zone-guardduty-detector"
+    Name = "${var.name_prefix}-guardduty-detector"
   })
 }
 
-# GuardDuty Feature - S3 Logs
 resource "aws_guardduty_detector_feature" "s3_logs" {
   count = var.enable_guardduty ? 1 : 0
 
@@ -18,7 +32,6 @@ resource "aws_guardduty_detector_feature" "s3_logs" {
   status      = "ENABLED"
 }
 
-# GuardDuty Feature - Malware Protection
 resource "aws_guardduty_detector_feature" "malware_protection" {
   count = var.enable_guardduty ? 1 : 0
 
@@ -27,50 +40,136 @@ resource "aws_guardduty_detector_feature" "malware_protection" {
   status      = "ENABLED"
 }
 
-# GuardDuty Publishing Destination (S3) - with prevent_destroy
-# security:disable-bucket-logging-requirement
-# This bucket is used exclusively by GuardDuty service and does not require access logging
-resource "aws_s3_bucket" "guardduty_findings_protected" {
-  count  = var.enable_guardduty && var.guardduty_findings_bucket_name != "" && var.prevent_destroy ? 1 : 0
-  bucket = var.guardduty_findings_bucket_name
+# -----------------------------------------------------------------------------
+# S3 Access Logging Bucket for GuardDuty Findings
+# -----------------------------------------------------------------------------
+
+resource "aws_s3_bucket" "guardduty_access_logs" {
+  count  = local.create_bucket ? 1 : 0
+  bucket = "${var.guardduty_findings_bucket_name}-access-logs"
+
   tags = merge(var.tags, {
-    Name = "guardduty-findings-bucket"
+    Name = "${var.name_prefix}-guardduty-access-logs"
   })
+}
+
+resource "aws_s3_bucket_public_access_block" "guardduty_access_logs" {
+  count  = local.create_bucket ? 1 : 0
+  bucket = aws_s3_bucket.guardduty_access_logs[0].id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "guardduty_access_logs" {
+  count  = local.create_bucket ? 1 : 0
+  bucket = aws_s3_bucket.guardduty_access_logs[0].id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "guardduty_access_logs" {
+  count  = local.create_bucket ? 1 : 0
+  bucket = aws_s3_bucket.guardduty_access_logs[0].id
+
+  rule {
+    id     = "access-log-lifecycle"
+    status = "Enabled"
+
+    filter {
+      prefix = ""
+    }
+
+    expiration {
+      days = 90
+    }
+  }
+}
+
+resource "aws_s3_bucket_policy" "guardduty_access_logs" {
+  count  = local.create_bucket ? 1 : 0
+  bucket = aws_s3_bucket.guardduty_access_logs[0].id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid       = "DenyInsecureTransport"
+        Effect    = "Deny"
+        Principal = "*"
+        Action    = "s3:*"
+        Resource = [
+          aws_s3_bucket.guardduty_access_logs[0].arn,
+          "${aws_s3_bucket.guardduty_access_logs[0].arn}/*"
+        ]
+        Condition = {
+          Bool = {
+            "aws:SecureTransport" = "false"
+          }
+        }
+      },
+      {
+        Sid    = "S3ServerAccessLogsPolicy"
+        Effect = "Allow"
+        Principal = {
+          Service = "logging.s3.amazonaws.com"
+        }
+        Action   = "s3:PutObject"
+        Resource = "${aws_s3_bucket.guardduty_access_logs[0].arn}/*"
+        Condition = {
+          ArnLike = {
+            "aws:SourceArn" = "arn:aws:s3:::${var.guardduty_findings_bucket_name}"
+          }
+          StringEquals = {
+            "aws:SourceAccount" = local.account_id
+          }
+        }
+      }
+    ]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# GuardDuty Findings S3 Bucket
+# -----------------------------------------------------------------------------
+
+resource "aws_s3_bucket" "guardduty_findings_protected" {
+  count  = local.create_bucket && var.prevent_destroy ? 1 : 0
+  bucket = var.guardduty_findings_bucket_name
+
+  tags = merge(var.tags, {
+    Name = "${var.name_prefix}-guardduty-findings"
+  })
+
   lifecycle {
     prevent_destroy = true
   }
 }
 
-# GuardDuty Publishing Destination (S3) - without prevent_destroy
-# security:disable-bucket-logging-requirement
-# This bucket is used exclusively by GuardDuty service and does not require access logging
 resource "aws_s3_bucket" "guardduty_findings_unprotected" {
-  count = var.enable_guardduty && var.guardduty_findings_bucket_name != "" && !var.prevent_destroy ? 1 : 0
-
+  count  = local.create_bucket && !var.prevent_destroy ? 1 : 0
   bucket = var.guardduty_findings_bucket_name
 
   tags = merge(var.tags, {
-    Name = "guardduty-findings-bucket"
+    Name = "${var.name_prefix}-guardduty-findings"
   })
 }
 
-# Use the appropriate bucket based on prevent_destroy setting
-locals {
-  guardduty_bucket = var.prevent_destroy ? aws_s3_bucket.guardduty_findings_protected[0] : aws_s3_bucket.guardduty_findings_unprotected[0]
-}
-
-# S3 Bucket versioning for GuardDuty findings
 resource "aws_s3_bucket_versioning" "guardduty_findings" {
-  count  = var.enable_guardduty && var.guardduty_findings_bucket_name != "" ? 1 : 0
+  count  = local.create_bucket ? 1 : 0
   bucket = local.guardduty_bucket.id
   versioning_configuration {
     status = "Enabled"
   }
 }
 
-# S3 Bucket encryption for GuardDuty findings
 resource "aws_s3_bucket_server_side_encryption_configuration" "guardduty_findings" {
-  count  = var.enable_guardduty && var.guardduty_findings_bucket_name != "" ? 1 : 0
+  count  = local.create_bucket ? 1 : 0
   bucket = local.guardduty_bucket.id
 
   rule {
@@ -81,9 +180,8 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "guardduty_finding
   }
 }
 
-# S3 Bucket public access block for GuardDuty findings
 resource "aws_s3_bucket_public_access_block" "guardduty_findings" {
-  count  = var.enable_guardduty && var.guardduty_findings_bucket_name != "" ? 1 : 0
+  count  = local.create_bucket ? 1 : 0
   bucket = local.guardduty_bucket.id
 
   block_public_acls       = true
@@ -92,13 +190,35 @@ resource "aws_s3_bucket_public_access_block" "guardduty_findings" {
   restrict_public_buckets = true
 }
 
-# S3 Bucket policy for GuardDuty findings
+resource "aws_s3_bucket_logging" "guardduty_findings" {
+  count  = local.create_bucket ? 1 : 0
+  bucket = local.guardduty_bucket.id
+
+  target_bucket = aws_s3_bucket.guardduty_access_logs[0].id
+  target_prefix = "guardduty-bucket-logs/"
+}
+
 resource "aws_s3_bucket_policy" "guardduty_findings" {
-  count  = var.enable_guardduty && var.guardduty_findings_bucket_name != "" ? 1 : 0
+  count  = local.create_bucket ? 1 : 0
   bucket = local.guardduty_bucket.id
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
+      {
+        Sid       = "DenyInsecureTransport"
+        Effect    = "Deny"
+        Principal = "*"
+        Action    = "s3:*"
+        Resource = [
+          local.guardduty_bucket.arn,
+          "${local.guardduty_bucket.arn}/*"
+        ]
+        Condition = {
+          Bool = {
+            "aws:SecureTransport" = "false"
+          }
+        }
+      },
       {
         Sid    = "AWSGuardDutyAclCheck"
         Effect = "Allow"
@@ -109,10 +229,10 @@ resource "aws_s3_bucket_policy" "guardduty_findings" {
         Resource = local.guardduty_bucket.arn
         Condition = {
           StringEquals = {
-            "aws:SourceAccount" = var.account_id
+            "aws:SourceAccount" = local.account_id
           }
           StringLike = {
-            "aws:SourceArn" = "arn:aws:guardduty:${var.region}:${var.account_id}:detector/*"
+            "aws:SourceArn" = "arn:aws:guardduty:${local.region}:${local.account_id}:detector/*"
           }
         }
       },
@@ -126,10 +246,10 @@ resource "aws_s3_bucket_policy" "guardduty_findings" {
         Resource = local.guardduty_bucket.arn
         Condition = {
           StringEquals = {
-            "aws:SourceAccount" = var.account_id
+            "aws:SourceAccount" = local.account_id
           }
           StringLike = {
-            "aws:SourceArn" = "arn:aws:guardduty:${var.region}:${var.account_id}:detector/*"
+            "aws:SourceArn" = "arn:aws:guardduty:${local.region}:${local.account_id}:detector/*"
           }
         }
       },
@@ -143,11 +263,11 @@ resource "aws_s3_bucket_policy" "guardduty_findings" {
         Resource = "${local.guardduty_bucket.arn}/*"
         Condition = {
           StringEquals = {
-            "aws:SourceAccount" = var.account_id
+            "aws:SourceAccount" = local.account_id
             "s3:x-amz-acl"      = "bucket-owner-full-control"
           }
           StringLike = {
-            "aws:SourceArn" = "arn:aws:guardduty:${var.region}:${var.account_id}:detector/*"
+            "aws:SourceArn" = "arn:aws:guardduty:${local.region}:${local.account_id}:detector/*"
           }
         }
       }
@@ -155,9 +275,8 @@ resource "aws_s3_bucket_policy" "guardduty_findings" {
   })
 }
 
-# GuardDuty Publishing Destination
 resource "aws_guardduty_publishing_destination" "main" {
-  count = var.enable_guardduty && var.guardduty_findings_bucket_name != "" ? 1 : 0
+  count = local.create_bucket ? 1 : 0
 
   detector_id      = aws_guardduty_detector.main[0].id
   destination_type = "S3"
@@ -165,4 +284,4 @@ resource "aws_guardduty_publishing_destination" "main" {
   kms_key_arn      = var.s3_encryption_key_arn
 
   depends_on = [aws_s3_bucket_policy.guardduty_findings]
-} 
+}

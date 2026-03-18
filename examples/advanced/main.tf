@@ -1,9 +1,9 @@
 terraform {
-  required_version = ">= 1.5.0"
+  required_version = ">= 1.5.0, < 2.0.0"
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = ">= 6.0.0"
+      version = "~> 6.0"
     }
   }
 }
@@ -12,26 +12,22 @@ provider "aws" {
   region = var.region
 }
 
-# Data sources
-data "aws_caller_identity" "current" {}
-data "aws_region" "current" {}
-
-# Landing Zone Module with Advanced Features
 module "landing_zone" {
   source = "../.."
 
-  # Basic Configuration
-  account_id = data.aws_caller_identity.current.account_id
-  region     = var.region
+  # Core
+  name_prefix = var.name_prefix
 
   # VPC Configuration
   vpc_cidr             = var.vpc_cidr
   public_subnet_cidrs  = var.public_subnet_cidrs
   private_subnet_cidrs = var.private_subnet_cidrs
+  enable_vpc_flow_logs = true
 
   # CloudTrail Configuration
-  cloudtrail_bucket_name = var.cloudtrail_bucket_name
-  cloudtrail_enable_kms  = true
+  cloudtrail_bucket_name       = var.cloudtrail_bucket_name
+  cloudtrail_enable_kms        = true
+  cloudtrail_enable_cloudwatch = true
 
   # AWS Config Configuration
   config_rules = {
@@ -69,17 +65,18 @@ module "landing_zone" {
   enable_guardduty               = true
   guardduty_findings_bucket_name = var.guardduty_findings_bucket_name
 
-
   # Budget Configuration
-  enable_budget_alerts     = true
-  enable_budget_actions    = false
-  budget_limit_usd         = var.budget_limit_usd
-  budget_alert_subscribers = var.budget_alert_subscribers
+  enable_budget_alerts           = true
+  enable_budget_actions          = false
+  budget_limit_usd               = var.budget_limit_usd
+  budget_alert_subscribers       = var.budget_alert_subscribers
+  budget_notification_thresholds = [50, 80, 100, 150, 200]
 
   # Security Hub Configuration
   enable_security_hub   = true
   enable_cis_standard   = true
   enable_pci_standard   = var.enable_pci_standard
+  enable_fsbp_standard  = true
   enable_action_targets = true
 
   # Macie Configuration
@@ -103,10 +100,9 @@ module "landing_zone" {
     }
   }
 
+  # S3 Account-Level Public Access Block
+  enable_s3_block_public_access = true
+
   # Tags
-  tags = merge(var.tags, {
-    Environment = "advanced"
-    Project     = "secure-landing-zone"
-    Owner       = "platform-team"
-  })
-} 
+  tags = var.tags
+}

@@ -1,12 +1,11 @@
-# AWS Account ID is automatically detected from AWS credentials
-# No need to specify account_id in terraform.tfvars
+# Unique name prefix for all resources (required)
+name_prefix = "my-org-dev"
 
 # AWS region (optional, defaults to us-east-1)
 region = "us-east-1"
 
-# CloudTrail S3 bucket name (required)
-# Must be globally unique
-cloudtrail_bucket_name = "my-org-cloudtrail-logs-2024"
+# CloudTrail S3 bucket suffix (will be prefixed with name_prefix)
+cloudtrail_bucket_name = "cloudtrail-logs"
 
 # Tags to apply to all resources (optional)
 tags = {
@@ -14,4 +13,4 @@ tags = {
   Owner       = "platform-team"
   Project     = "landing-zone"
   CostCenter  = "IT-001"
-} 
+}

@@ -29,6 +29,11 @@ output "nat_gateway_id" {
   value       = module.landing_zone.nat_gateway_id
 }
 
+output "vpc_flow_log_group_name" {
+  description = "Name of the CloudWatch Log Group for VPC Flow Logs"
+  value       = module.landing_zone.vpc_flow_log_group_name
+}
+
 # CloudTrail Outputs
 output "cloudtrail_bucket_arn" {
   description = "ARN of the CloudTrail S3 bucket"
@@ -48,14 +53,15 @@ output "cloudtrail_arn" {
 output "cloudtrail_kms_key_arn" {
   description = "ARN of the KMS key used for CloudTrail encryption"
   value       = module.landing_zone.cloudtrail_kms_key_arn
+  sensitive   = true
+}
+
+output "cloudtrail_cloudwatch_log_group" {
+  description = "Name of the CloudWatch Log Group for CloudTrail"
+  value       = module.landing_zone.cloudtrail_cloudwatch_log_group
 }
 
 # AWS Config Outputs
-output "config_recorder_arn" {
-  description = "ARN of the AWS Config recorder"
-  value       = module.landing_zone.config_recorder_arn
-}
-
 output "config_recorder_name" {
   description = "Name of the AWS Config recorder"
   value       = module.landing_zone.config_recorder_name
@@ -107,4 +113,10 @@ output "budget_arn" {
 output "budget_sns_topic_arn" {
   description = "ARN of the SNS topic for budget alerts"
   value       = module.landing_zone.budget_sns_topic_arn
-} 
+}
+
+# S3 Account-Level Outputs
+output "s3_block_public_access_enabled" {
+  description = "Whether account-level S3 Block Public Access is enabled"
+  value       = module.landing_zone.s3_block_public_access_enabled
+}

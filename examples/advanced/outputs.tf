@@ -14,10 +14,20 @@ output "private_subnet_ids" {
   value       = module.landing_zone.private_subnet_ids
 }
 
+output "vpc_flow_log_group_name" {
+  description = "Name of the CloudWatch Log Group for VPC Flow Logs"
+  value       = module.landing_zone.vpc_flow_log_group_name
+}
+
 # Security Outputs
 output "cloudtrail_bucket_arn" {
   description = "ARN of the CloudTrail S3 bucket"
   value       = module.landing_zone.cloudtrail_bucket_arn
+}
+
+output "cloudtrail_cloudwatch_log_group" {
+  description = "Name of the CloudWatch Log Group for CloudTrail"
+  value       = module.landing_zone.cloudtrail_cloudwatch_log_group
 }
 
 output "guardduty_detector_id" {
@@ -38,6 +48,11 @@ output "cis_standard_enabled" {
 output "pci_standard_enabled" {
   description = "Whether PCI DSS standard is enabled"
   value       = module.landing_zone.pci_standard_enabled
+}
+
+output "fsbp_standard_enabled" {
+  description = "Whether AWS FSBP standard is enabled"
+  value       = module.landing_zone.fsbp_standard_enabled
 }
 
 output "macie_enabled" {
@@ -75,4 +90,10 @@ output "iam_role_arns" {
 output "iam_role_names" {
   description = "List of IAM role names"
   value       = module.landing_zone.iam_role_names
-} 
+}
+
+# S3 Account-Level Outputs
+output "s3_block_public_access_enabled" {
+  description = "Whether account-level S3 Block Public Access is enabled"
+  value       = module.landing_zone.s3_block_public_access_enabled
+}

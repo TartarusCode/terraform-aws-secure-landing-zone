@@ -1,16 +1,24 @@
-# SNS Topic for budget notifications
+locals {
+  has_subscribers  = length(var.budget_alert_subscribers) > 0
+  enable_actions   = var.enable_budget_alerts && var.enable_budget_actions && local.has_subscribers
+  notification_set = local.has_subscribers ? var.notification_thresholds : []
+}
+
+# -----------------------------------------------------------------------------
+# SNS Topic for Budget Notifications
+# -----------------------------------------------------------------------------
+
 resource "aws_sns_topic" "budget" {
   count = var.enable_budget_alerts ? 1 : 0
 
-  name              = "landing-zone-budget-alerts"
+  name              = "${var.name_prefix}-budget-alerts"
   kms_master_key_id = var.sns_encryption_key_arn
 
   tags = merge(var.tags, {
-    Name = "landing-zone-budget-alerts"
+    Name = "${var.name_prefix}-budget-alerts"
   })
 }
 
-# SNS Topic Policy for budget notifications
 resource "aws_sns_topic_policy" "budget" {
   count = var.enable_budget_alerts ? 1 : 0
 
@@ -31,7 +39,6 @@ resource "aws_sns_topic_policy" "budget" {
   })
 }
 
-# SNS Topic Subscriptions
 resource "aws_sns_topic_subscription" "budget" {
   for_each = var.enable_budget_alerts ? toset(var.budget_alert_subscribers) : toset([])
 
@@ -40,65 +47,24 @@ resource "aws_sns_topic_subscription" "budget" {
   endpoint  = each.value
 }
 
+# -----------------------------------------------------------------------------
 # Budget
+# -----------------------------------------------------------------------------
+
 resource "aws_budgets_budget" "cost" {
   count = var.enable_budget_alerts ? 1 : 0
 
-  name         = "landing-zone-cost-budget"
+  name         = "${var.name_prefix}-cost-budget"
   budget_type  = "COST"
   time_unit    = "MONTHLY"
   limit_amount = var.budget_limit_usd
   limit_unit   = "USD"
 
   dynamic "notification" {
-    for_each = length(var.budget_alert_subscribers) > 0 ? [1] : []
+    for_each = local.notification_set
     content {
       comparison_operator        = "GREATER_THAN"
-      threshold                  = 80
-      threshold_type             = "PERCENTAGE"
-      notification_type          = "ACTUAL"
-      subscriber_email_addresses = var.budget_alert_subscribers
-    }
-  }
-
-  dynamic "notification" {
-    for_each = length(var.budget_alert_subscribers) > 0 ? [1] : []
-    content {
-      comparison_operator        = "GREATER_THAN"
-      threshold                  = 100
-      threshold_type             = "PERCENTAGE"
-      notification_type          = "ACTUAL"
-      subscriber_email_addresses = var.budget_alert_subscribers
-    }
-  }
-
-  dynamic "notification" {
-    for_each = length(var.budget_alert_subscribers) > 0 ? [1] : []
-    content {
-      comparison_operator        = "GREATER_THAN"
-      threshold                  = 120
-      threshold_type             = "PERCENTAGE"
-      notification_type          = "ACTUAL"
-      subscriber_email_addresses = var.budget_alert_subscribers
-    }
-  }
-
-  dynamic "notification" {
-    for_each = length(var.budget_alert_subscribers) > 0 ? [1] : []
-    content {
-      comparison_operator        = "GREATER_THAN"
-      threshold                  = 150
-      threshold_type             = "PERCENTAGE"
-      notification_type          = "ACTUAL"
-      subscriber_email_addresses = var.budget_alert_subscribers
-    }
-  }
-
-  dynamic "notification" {
-    for_each = length(var.budget_alert_subscribers) > 0 ? [1] : []
-    content {
-      comparison_operator        = "GREATER_THAN"
-      threshold                  = 200
+      threshold                  = notification.value
       threshold_type             = "PERCENTAGE"
       notification_type          = "ACTUAL"
       subscriber_email_addresses = var.budget_alert_subscribers
@@ -106,13 +72,16 @@ resource "aws_budgets_budget" "cost" {
   }
 
   tags = merge(var.tags, {
-    Name = "landing-zone-cost-budget"
+    Name = "${var.name_prefix}-cost-budget"
   })
 }
 
-# Budget Action (optional - for automated responses)
+# -----------------------------------------------------------------------------
+# Budget Action (optional automated response)
+# -----------------------------------------------------------------------------
+
 resource "aws_budgets_budget_action" "cost_control" {
-  count = var.enable_budget_alerts && var.enable_budget_actions ? 1 : 0
+  count = local.enable_actions ? 1 : 0
 
   budget_name        = aws_budgets_budget.cost[0].name
   action_type        = "APPLY_IAM_POLICY"
@@ -137,11 +106,10 @@ resource "aws_budgets_budget_action" "cost_control" {
   }
 }
 
-# IAM Role for Budget Actions
 resource "aws_iam_role" "budget_action" {
-  count = var.enable_budget_alerts && var.enable_budget_actions ? 1 : 0
+  count = local.enable_actions ? 1 : 0
 
-  name = "budget-action-role"
+  name = "${var.name_prefix}-budget-action-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -157,32 +125,33 @@ resource "aws_iam_role" "budget_action" {
   })
 
   tags = merge(var.tags, {
-    Name = "budget-action-role"
+    Name = "${var.name_prefix}-budget-action-role"
   })
 }
 
-# IAM Role Policy for Budget Actions
 resource "aws_iam_role_policy" "budget_action" {
-  count = var.enable_budget_alerts && var.enable_budget_actions ? 1 : 0
+  count = local.enable_actions ? 1 : 0
 
-  name = "budget-action-policy"
+  name = "${var.name_prefix}-budget-action-policy"
   role = aws_iam_role.budget_action[0].id
 
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
       {
+        Sid    = "BudgetActionApplyPolicy"
         Effect = "Allow"
         Action = [
-          "iam:AttachUserPolicy",
-          "iam:DetachUserPolicy",
-          "iam:AttachGroupPolicy",
-          "iam:DetachGroupPolicy",
           "iam:AttachRolePolicy",
           "iam:DetachRolePolicy"
         ]
-        Resource = "*"
+        Resource = "arn:aws:iam::*:role/${var.name_prefix}-*"
+        Condition = {
+          ArnEquals = {
+            "iam:PolicyARN" = "arn:aws:iam::aws:policy/AWSBillingReadOnlyAccess"
+          }
+        }
       }
     ]
   })
-} 
+}

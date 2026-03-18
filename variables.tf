@@ -1,22 +1,33 @@
-variable "account_id" {
-  description = "AWS Account ID"
+# -----------------------------------------------------------------------------
+# Core Configuration
+# -----------------------------------------------------------------------------
+
+variable "name_prefix" {
+  description = "Prefix for all resource names to enable multiple deployments in the same account"
   type        = string
+
+  validation {
+    condition     = can(regex("^[a-z0-9][a-z0-9-]{1,28}[a-z0-9]$", var.name_prefix))
+    error_message = "name_prefix must be 3-30 characters, lowercase alphanumeric and hyphens, starting/ending with alphanumeric."
+  }
+}
+
+variable "account_id" {
+  description = "AWS Account ID (auto-detected if not provided)"
+  type        = string
+  default     = ""
 }
 
 variable "region" {
-  description = "AWS region"
+  description = "AWS region (auto-detected from provider if not provided)"
   type        = string
-  default     = "us-east-1"
+  default     = ""
 }
 
 variable "tags" {
   description = "Tags to apply to all resources"
   type        = map(string)
-  default = {
-    Terraform   = "true"
-    Environment = "prod"
-    Owner       = "platform"
-  }
+  default     = {}
 }
 
 variable "prevent_destroy" {
@@ -25,7 +36,59 @@ variable "prevent_destroy" {
   default     = true
 }
 
+# -----------------------------------------------------------------------------
+# KMS Configuration
+# -----------------------------------------------------------------------------
+
+variable "kms_deletion_window_days" {
+  description = "Number of days before KMS key deletion (7-30). Use 30 for production."
+  type        = number
+  default     = 30
+
+  validation {
+    condition     = var.kms_deletion_window_days >= 7 && var.kms_deletion_window_days <= 30
+    error_message = "KMS deletion window must be between 7 and 30 days."
+  }
+}
+
+# -----------------------------------------------------------------------------
+# Module Enable Toggles
+# -----------------------------------------------------------------------------
+
+variable "enable_vpc" {
+  description = "Enable the VPC module"
+  type        = bool
+  default     = true
+}
+
+variable "enable_cloudtrail" {
+  description = "Enable the CloudTrail module"
+  type        = bool
+  default     = true
+}
+
+variable "enable_config" {
+  description = "Enable the AWS Config module"
+  type        = bool
+  default     = true
+}
+
+variable "enable_iam" {
+  description = "Enable the IAM baseline module"
+  type        = bool
+  default     = true
+}
+
+variable "enable_s3_block_public_access" {
+  description = "Enable account-level S3 Block Public Access"
+  type        = bool
+  default     = true
+}
+
+# -----------------------------------------------------------------------------
 # VPC Variables
+# -----------------------------------------------------------------------------
+
 variable "vpc_cidr" {
   description = "CIDR block for VPC"
   type        = string
@@ -87,9 +150,24 @@ variable "private_subnet_cidrs" {
   }
 }
 
+variable "enable_vpc_flow_logs" {
+  description = "Enable VPC Flow Logs to CloudWatch"
+  type        = bool
+  default     = true
+}
+
+variable "vpc_flow_log_retention" {
+  description = "Number of days to retain VPC Flow Logs in CloudWatch"
+  type        = number
+  default     = 90
+}
+
+# -----------------------------------------------------------------------------
 # CloudTrail Variables
+# -----------------------------------------------------------------------------
+
 variable "cloudtrail_bucket_name" {
-  description = "Name of the S3 bucket for CloudTrail logs"
+  description = "Suffix for the S3 bucket name for CloudTrail logs (will be prefixed with name_prefix)"
   type        = string
   default     = "cloudtrail-logs"
 }
@@ -100,9 +178,24 @@ variable "cloudtrail_enable_kms" {
   default     = true
 }
 
+variable "cloudtrail_enable_cloudwatch" {
+  description = "Enable CloudWatch Logs integration for CloudTrail"
+  type        = bool
+  default     = true
+}
+
+variable "cloudtrail_log_retention_days" {
+  description = "Number of days to retain CloudTrail logs in CloudWatch"
+  type        = number
+  default     = 90
+}
+
+# -----------------------------------------------------------------------------
 # AWS Config Variables
+# -----------------------------------------------------------------------------
+
 variable "config_rules" {
-  description = "Map of AWS Config rule names to rule configurations"
+  description = "Map of AWS Config rule names to managed rule source identifiers"
   type        = map(string)
   default = {
     "s3-bucket-public-read-prohibited"  = "S3_BUCKET_PUBLIC_READ_PROHIBITED"
@@ -113,9 +206,12 @@ variable "config_rules" {
   }
 }
 
+# -----------------------------------------------------------------------------
 # IAM Variables
+# -----------------------------------------------------------------------------
+
 variable "iam_roles" {
-  description = "List of IAM role configurations"
+  description = "List of IAM role configurations to create"
   type = list(object({
     name                = string
     description         = string
@@ -142,7 +238,10 @@ variable "iam_roles" {
   ]
 }
 
+# -----------------------------------------------------------------------------
 # GuardDuty Variables
+# -----------------------------------------------------------------------------
+
 variable "enable_guardduty" {
   description = "Enable GuardDuty threat detection"
   type        = bool
@@ -150,12 +249,15 @@ variable "enable_guardduty" {
 }
 
 variable "guardduty_findings_bucket_name" {
-  description = "Name of the S3 bucket for GuardDuty findings"
+  description = "Suffix for the S3 bucket name for GuardDuty findings (will be prefixed with name_prefix). Leave empty to skip findings export."
   type        = string
   default     = "guardduty-findings"
 }
 
+# -----------------------------------------------------------------------------
 # Budget Variables
+# -----------------------------------------------------------------------------
+
 variable "enable_budget_alerts" {
   description = "Enable budget alerts and notifications"
   type        = bool
@@ -163,7 +265,7 @@ variable "enable_budget_alerts" {
 }
 
 variable "enable_budget_actions" {
-  description = "Enable budget actions for automated responses"
+  description = "Enable budget actions for automated responses (requires at least one subscriber)"
   type        = bool
   default     = false
 }
@@ -180,7 +282,21 @@ variable "budget_alert_subscribers" {
   default     = []
 }
 
+variable "budget_notification_thresholds" {
+  description = "List of budget threshold percentages to trigger notifications"
+  type        = list(number)
+  default     = [80, 100, 120, 150, 200]
+
+  validation {
+    condition     = alltrue([for t in var.budget_notification_thresholds : t > 0 && t <= 1000])
+    error_message = "Budget notification thresholds must be between 1 and 1000 percent."
+  }
+}
+
+# -----------------------------------------------------------------------------
 # Security Hub Variables
+# -----------------------------------------------------------------------------
+
 variable "enable_security_hub" {
   description = "Enable AWS Security Hub"
   type        = bool
@@ -199,13 +315,22 @@ variable "enable_pci_standard" {
   default     = false
 }
 
+variable "enable_fsbp_standard" {
+  description = "Enable AWS Foundational Security Best Practices standard"
+  type        = bool
+  default     = true
+}
+
 variable "enable_action_targets" {
   description = "Enable Security Hub action targets"
   type        = bool
   default     = true
 }
 
+# -----------------------------------------------------------------------------
 # Macie Variables
+# -----------------------------------------------------------------------------
+
 variable "enable_macie" {
   description = "Enable Amazon Macie"
   type        = bool
@@ -251,10 +376,3 @@ variable "macie_custom_data_identifiers" {
   }))
   default = {}
 }
-
-# Optional Feature Toggles
-variable "enable_s3_block_public_access" {
-  description = "Enable S3 Block Public Access"
-  type        = bool
-  default     = false
-} 

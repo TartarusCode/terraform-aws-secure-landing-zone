@@ -1,6 +1,5 @@
-# IAM Role for AWS Config
 resource "aws_iam_role" "config" {
-  name = "aws-config-role"
+  name = "${var.name_prefix}-config-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -16,25 +15,21 @@ resource "aws_iam_role" "config" {
   })
 
   tags = merge(var.tags, {
-    Name = "aws-config-role"
+    Name = "${var.name_prefix}-config-role"
   })
 }
 
-
-
-# SNS Topic for AWS Config notifications
 resource "aws_sns_topic" "config" {
-  name              = "aws-config-notifications"
+  name              = "${var.name_prefix}-config-notifications"
   kms_master_key_id = var.sns_encryption_key_arn
 
   tags = merge(var.tags, {
-    Name = "aws-config-notifications"
+    Name = "${var.name_prefix}-config-notifications"
   })
 }
 
-# IAM Role Policy for AWS Config
 resource "aws_iam_role_policy" "config" {
-  name = "aws-config-policy"
+  name = "${var.name_prefix}-config-policy"
   role = aws_iam_role.config.id
 
   policy = jsonencode({
@@ -75,9 +70,8 @@ resource "aws_iam_role_policy" "config" {
   })
 }
 
-# AWS Config Configuration Recorder
 resource "aws_config_configuration_recorder" "main" {
-  name     = "landing-zone-config-recorder"
+  name     = "${var.name_prefix}-config-recorder"
   role_arn = aws_iam_role.config.arn
 
   recording_group {
@@ -85,16 +79,14 @@ resource "aws_config_configuration_recorder" "main" {
   }
 }
 
-# AWS Config Delivery Channel
 resource "aws_config_delivery_channel" "main" {
-  name           = "landing-zone-config-delivery"
+  name           = "${var.name_prefix}-config-delivery"
   s3_bucket_name = var.config_bucket_name
   s3_key_prefix  = "config"
 
   depends_on = [aws_config_configuration_recorder.main]
 }
 
-# AWS Config Configuration Recorder Status
 resource "aws_config_configuration_recorder_status" "main" {
   name       = aws_config_configuration_recorder.main.name
   is_enabled = true
@@ -102,7 +94,6 @@ resource "aws_config_configuration_recorder_status" "main" {
   depends_on = [aws_config_delivery_channel.main]
 }
 
-# AWS Config Rules
 resource "aws_config_config_rule" "managed_rules" {
   for_each = var.config_rules
 
@@ -119,4 +110,4 @@ resource "aws_config_config_rule" "managed_rules" {
   tags = merge(var.tags, {
     Name = each.key
   })
-} 
+}

@@ -1,14 +1,3 @@
-variable "account_id" {
-  description = "AWS Account ID"
-  type        = string
-}
-
-variable "region" {
-  description = "AWS region"
-  type        = string
-  default     = "us-east-1"
-}
-
 variable "enable_security_hub" {
   description = "Enable AWS Security Hub"
   type        = bool
@@ -27,6 +16,12 @@ variable "enable_pci_standard" {
   default     = false
 }
 
+variable "enable_fsbp_standard" {
+  description = "Enable AWS Foundational Security Best Practices standard"
+  type        = bool
+  default     = true
+}
+
 variable "enable_action_targets" {
   description = "Enable Security Hub action targets"
   type        = bool
@@ -37,4 +32,4 @@ variable "tags" {
   description = "Tags to apply to all resources"
   type        = map(string)
   default     = {}
-} 
+}

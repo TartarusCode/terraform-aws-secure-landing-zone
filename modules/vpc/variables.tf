@@ -1,22 +1,12 @@
-variable "account_id" {
-  description = "AWS Account ID"
+variable "name_prefix" {
+  description = "Prefix for all resource names"
   type        = string
-}
-
-variable "region" {
-  description = "AWS region"
-  type        = string
-  default     = "us-east-1"
 }
 
 variable "tags" {
   description = "Tags to apply to all resources"
   type        = map(string)
-  default = {
-    Terraform   = "true"
-    Environment = "prod"
-    Owner       = "platform"
-  }
+  default     = {}
 }
 
 variable "vpc_cidr" {
@@ -84,4 +74,16 @@ variable "map_public_ip_on_launch" {
   description = "Whether to map public IP on launch for public subnets"
   type        = bool
   default     = false
-} 
+}
+
+variable "enable_flow_logs" {
+  description = "Enable VPC Flow Logs to CloudWatch Logs"
+  type        = bool
+  default     = true
+}
+
+variable "flow_log_retention" {
+  description = "Number of days to retain VPC Flow Logs"
+  type        = number
+  default     = 90
+}

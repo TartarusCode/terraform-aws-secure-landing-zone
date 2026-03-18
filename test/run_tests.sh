@@ -1,38 +1,35 @@
 #!/bin/bash
+set -euo pipefail
 
-# Test runner script for Terraform Secure Landing Zone
-# This script sets up the test environment and runs all Terratest tests
+echo "Terraform Secure Landing Zone Test Suite"
+echo "========================================="
+echo ""
 
-set -e
-
-echo "🧪 Terraform Secure Landing Zone Test Suite"
-echo "============================================"
-
-# Change to test directory
 cd "$(dirname "$0")"
 
-# Setup phase
-echo "🔧 Setting up test environment..."
-echo "📦 Updating Go modules..."
+echo "Setting up test environment..."
 go mod tidy
-
-echo "✅ Verifying dependencies..."
 go mod verify
 
-echo "🎯 Running tests..."
 echo ""
-
-# Show test count
-echo "📊 Found $(go test -list . | grep -c '^Test') tests to run"
-echo ""
-
-# Run tests in parallel where possible
-go test -v -timeout 30m ./...
+echo "Compiling test suite..."
+go build ./...
+go vet ./...
 
 echo ""
-echo "✅ All tests completed!"
+echo "Running tests..."
 echo ""
-echo "💡 Tips:"
-echo "  - Run specific tests: go test -v -run TestName"
-echo "  - Run with coverage: go test -v -cover ./..."
-echo "  - Run in verbose mode: go test -v -timeout 30m ./..." 
+
+TEST_COUNT=$(go test -list '.' ./... 2>/dev/null | grep -c '^Test' || echo "0")
+echo "Found ${TEST_COUNT} tests to run"
+echo ""
+
+go test -v -timeout 30m -count=1 ./...
+
+echo ""
+echo "All tests completed!"
+echo ""
+echo "Tips:"
+echo "  Run specific test:    go test -v -run TestName ./..."
+echo "  Run with coverage:    go test -v -cover ./..."
+echo "  Compile-only check:   go build ./... && go vet ./..."

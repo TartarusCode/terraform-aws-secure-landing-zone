@@ -1,221 +1,101 @@
 terraform {
-  required_version = ">= 1.5.0"
+  required_version = ">= 1.5.0, < 2.0.0"
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = ">= 6.0.0"
+      version = "~> 6.0"
     }
   }
 }
 
-provider "aws" {
-  region = var.region
+data "aws_caller_identity" "current" {}
+data "aws_region" "current" {}
+
+locals {
+  account_id = coalesce(var.account_id, data.aws_caller_identity.current.account_id)
+  region     = coalesce(var.region, data.aws_region.current.region)
 }
 
-# Shared KMS Key for S3 bucket encryption (used by CloudTrail, GuardDuty, Config)
-resource "aws_kms_key" "s3_encryption" {
-  description             = "KMS key for S3 bucket encryption"
-  deletion_window_in_days = 7
-  enable_key_rotation     = true
+# KMS Module
+module "kms" {
+  source = "./modules/kms"
 
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid    = "Enable IAM User Permissions"
-        Effect = "Allow"
-        Principal = {
-          AWS = "arn:aws:iam::${var.account_id}:root"
-        }
-        Action   = "kms:*"
-        Resource = "*"
-      },
-      {
-        Sid    = "Allow CloudTrail to use the key"
-        Effect = "Allow"
-        Principal = {
-          Service = "cloudtrail.amazonaws.com"
-        }
-        Action = [
-          "kms:Decrypt",
-          "kms:GenerateDataKey"
-        ]
-        Resource = "*"
-      },
-      {
-        Sid    = "Allow GuardDuty to use the key"
-        Effect = "Allow"
-        Principal = {
-          Service = "guardduty.amazonaws.com"
-        }
-        Action = [
-          "kms:Decrypt",
-          "kms:GenerateDataKey",
-          "kms:DescribeKey"
-        ]
-        Resource = "*"
-        Condition = {
-          StringEquals = {
-            "aws:SourceAccount" = var.account_id
-          }
-          StringLike = {
-            "aws:SourceArn" = "arn:aws:guardduty:${var.region}:${var.account_id}:detector/*"
-          }
-        }
-      },
-      {
-        Sid    = "Allow Config to use the key"
-        Effect = "Allow"
-        Principal = {
-          Service = "config.amazonaws.com"
-        }
-        Action = [
-          "kms:Decrypt",
-          "kms:GenerateDataKey",
-          "kms:DescribeKey"
-        ]
-        Resource = "*"
-      }
-    ]
-  })
-
-  tags = merge(var.tags, {
-    Name = "s3-encryption-key"
-  })
+  name_prefix              = var.name_prefix
+  kms_deletion_window_days = var.kms_deletion_window_days
+  tags                     = var.tags
 }
 
-# KMS Alias for S3 encryption
-resource "aws_kms_alias" "s3_encryption" {
-  name          = "alias/s3-encryption"
-  target_key_id = aws_kms_key.s3_encryption.id
-}
+# S3 Account-Level Public Access Block
+resource "aws_s3_account_public_access_block" "main" {
+  count = var.enable_s3_block_public_access ? 1 : 0
 
-# Shared KMS Key for SNS topic encryption (used by Config and Budget)
-resource "aws_kms_key" "sns_notifications" {
-  description             = "KMS key for SNS topic encryption"
-  deletion_window_in_days = 7
-  enable_key_rotation     = true
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid    = "Enable IAM User Permissions"
-        Effect = "Allow"
-        Principal = {
-          AWS = "arn:aws:iam::${var.account_id}:root"
-        }
-        Action   = "kms:*"
-        Resource = "*"
-      },
-      {
-        Sid    = "Allow SNS to use the key"
-        Effect = "Allow"
-        Principal = {
-          Service = "sns.amazonaws.com"
-        }
-        Action = [
-          "kms:Decrypt",
-          "kms:GenerateDataKey"
-        ]
-        Resource = "*"
-      },
-      {
-        Sid    = "Allow Config to use the key"
-        Effect = "Allow"
-        Principal = {
-          Service = "config.amazonaws.com"
-        }
-        Action = [
-          "kms:Decrypt",
-          "kms:GenerateDataKey"
-        ]
-        Resource = "*"
-      },
-      {
-        Sid    = "Allow Budgets to use the key"
-        Effect = "Allow"
-        Principal = {
-          Service = "budgets.amazonaws.com"
-        }
-        Action = [
-          "kms:Decrypt",
-          "kms:GenerateDataKey"
-        ]
-        Resource = "*"
-      }
-    ]
-  })
-
-  tags = merge(var.tags, {
-    Name = "sns-notifications-key"
-  })
-}
-
-# KMS Alias for SNS notifications
-resource "aws_kms_alias" "sns_notifications" {
-  name          = "alias/sns-notifications"
-  target_key_id = aws_kms_key.sns_notifications.id
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
 }
 
 # VPC Module
 module "vpc" {
+  count  = var.enable_vpc ? 1 : 0
   source = "./modules/vpc"
 
-  account_id           = var.account_id
-  region               = var.region
+  name_prefix          = var.name_prefix
   vpc_cidr             = var.vpc_cidr
   public_subnet_count  = var.public_subnet_count
   private_subnet_count = var.private_subnet_count
   public_subnet_cidrs  = var.public_subnet_cidrs
   private_subnet_cidrs = var.private_subnet_cidrs
+  enable_flow_logs     = var.enable_vpc_flow_logs
+  flow_log_retention   = var.vpc_flow_log_retention
   tags                 = var.tags
 }
 
 # CloudTrail Module
 module "cloudtrail" {
+  count  = var.enable_cloudtrail ? 1 : 0
   source = "./modules/cloudtrail"
 
-  account_id             = var.account_id
-  region                 = var.region
-  cloudtrail_bucket_name = var.cloudtrail_bucket_name
+  name_prefix            = var.name_prefix
+  cloudtrail_bucket_name = "${var.name_prefix}-${var.cloudtrail_bucket_name}"
   cloudtrail_enable_kms  = var.cloudtrail_enable_kms
-  s3_encryption_key_arn  = aws_kms_key.s3_encryption.arn
+  s3_encryption_key_arn  = module.kms.s3_encryption_key_arn
+  enable_cloudwatch_logs = var.cloudtrail_enable_cloudwatch
+  log_retention_days     = var.cloudtrail_log_retention_days
   prevent_destroy        = var.prevent_destroy
   tags                   = var.tags
 }
 
 # AWS Config Module
 module "config" {
+  count  = var.enable_config ? 1 : 0
   source = "./modules/config"
 
-  account_id             = var.account_id
-  region                 = var.region
-  config_bucket_name     = var.cloudtrail_bucket_name
+  name_prefix            = var.name_prefix
+  config_bucket_name     = "${var.name_prefix}-${var.cloudtrail_bucket_name}"
   config_rules           = var.config_rules
-  sns_encryption_key_arn = aws_kms_key.sns_notifications.arn
+  sns_encryption_key_arn = module.kms.sns_encryption_key_arn
   tags                   = var.tags
 }
 
 # IAM Module
 module "iam" {
+  count  = var.enable_iam ? 1 : 0
   source = "./modules/iam"
 
-  account_id = var.account_id
-  region     = var.region
-  iam_roles  = var.iam_roles
-  tags       = var.tags
+  name_prefix = var.name_prefix
+  iam_roles   = var.iam_roles
+  tags        = var.tags
 }
 
 # GuardDuty Module
 module "guardduty" {
   source = "./modules/guardduty"
 
-  account_id                     = var.account_id
-  region                         = var.region
+  name_prefix                    = var.name_prefix
   enable_guardduty               = var.enable_guardduty
-  guardduty_findings_bucket_name = var.guardduty_findings_bucket_name
-  s3_encryption_key_arn          = aws_kms_key.s3_encryption.arn
+  guardduty_findings_bucket_name = var.guardduty_findings_bucket_name != "" ? "${var.name_prefix}-${var.guardduty_findings_bucket_name}" : ""
+  s3_encryption_key_arn          = module.kms.s3_encryption_key_arn
   prevent_destroy                = var.prevent_destroy
   tags                           = var.tags
 }
@@ -224,13 +104,13 @@ module "guardduty" {
 module "budget" {
   source = "./modules/budget"
 
-  account_id               = var.account_id
-  region                   = var.region
+  name_prefix              = var.name_prefix
   enable_budget_alerts     = var.enable_budget_alerts
   enable_budget_actions    = var.enable_budget_actions
   budget_limit_usd         = var.budget_limit_usd
   budget_alert_subscribers = var.budget_alert_subscribers
-  sns_encryption_key_arn   = aws_kms_key.sns_notifications.arn
+  notification_thresholds  = var.budget_notification_thresholds
+  sns_encryption_key_arn   = module.kms.sns_encryption_key_arn
   tags                     = var.tags
 }
 
@@ -238,11 +118,10 @@ module "budget" {
 module "security_hub" {
   source = "./modules/security_hub"
 
-  account_id            = var.account_id
-  region                = var.region
   enable_security_hub   = var.enable_security_hub
   enable_cis_standard   = var.enable_cis_standard
   enable_pci_standard   = var.enable_pci_standard
+  enable_fsbp_standard  = var.enable_fsbp_standard
   enable_action_targets = var.enable_action_targets
   tags                  = var.tags
 }
@@ -251,8 +130,6 @@ module "security_hub" {
 module "macie" {
   source = "./modules/macie"
 
-  account_id                         = var.account_id
-  region                             = var.region
   enable_macie                       = var.enable_macie
   macie_finding_publishing_frequency = var.macie_finding_publishing_frequency
   enable_s3_classification           = var.enable_macie_s3_classification
@@ -260,4 +137,4 @@ module "macie" {
   excluded_file_extensions           = var.macie_excluded_file_extensions
   custom_data_identifiers            = var.macie_custom_data_identifiers
   tags                               = var.tags
-} 
+}

@@ -1,10 +1,10 @@
 package test
 
 import (
+	"strings"
 	"testing"
 	"time"
 
-	"github.com/gruntwork-io/terratest/modules/aws"
 	"github.com/gruntwork-io/terratest/modules/random"
 	"github.com/gruntwork-io/terratest/modules/terraform"
 	"github.com/stretchr/testify/assert"
@@ -13,22 +13,15 @@ import (
 func TestLandingZoneBasic(t *testing.T) {
 	t.Parallel()
 
-	// Generate unique names for resources
-	uniqueID := random.UniqueId()
-	cloudtrailBucketName := "test-cloudtrail-" + uniqueID
-	guarddutyFindingsBucketName := "test-guardduty-findings-" + uniqueID
+	uniqueID := strings.ToLower(random.UniqueId())
+	namePrefix := "test-lz-" + uniqueID
 
-	// Get AWS account ID
-	accountID := aws.GetAccountId(t)
-
-	// Configure Terraform options
 	terraformOptions := terraform.WithDefaultRetryableErrors(t, &terraform.Options{
 		TerraformDir: "..",
 		Vars: map[string]interface{}{
-			"account_id":                     accountID,
-			"region":                         "us-east-1",
-			"cloudtrail_bucket_name":         cloudtrailBucketName,
-			"guardduty_findings_bucket_name": guarddutyFindingsBucketName,
+			"name_prefix":                    namePrefix,
+			"cloudtrail_bucket_name":         "cloudtrail-logs",
+			"guardduty_findings_bucket_name": "guardduty-findings",
 			"enable_guardduty":               true,
 			"enable_budget_alerts":           true,
 			"enable_budget_actions":          false,
@@ -36,6 +29,8 @@ func TestLandingZoneBasic(t *testing.T) {
 			"budget_alert_subscribers":       []string{"test@example.com"},
 			"enable_security_hub":            false,
 			"enable_macie":                   false,
+			"prevent_destroy":                false,
+			"kms_deletion_window_days":       7,
 			"tags": map[string]string{
 				"Environment": "test",
 				"Owner":       "terratest",
@@ -49,33 +44,24 @@ func TestLandingZoneBasic(t *testing.T) {
 		},
 	})
 
-	// Clean up resources at the end of the test
 	defer terraform.Destroy(t, terraformOptions)
-
-	// Deploy the infrastructure
 	terraform.InitAndApply(t, terraformOptions)
 
-	// Get outputs
 	vpcID := terraform.Output(t, terraformOptions, "vpc_id")
 	publicSubnetIDs := terraform.OutputList(t, terraformOptions, "public_subnet_ids")
 	privateSubnetIDs := terraform.OutputList(t, terraformOptions, "private_subnet_ids")
 	cloudtrailBucketARN := terraform.Output(t, terraformOptions, "cloudtrail_bucket_arn")
 	guarddutyDetectorID := terraform.Output(t, terraformOptions, "guardduty_detector_id")
 	budgetID := terraform.Output(t, terraformOptions, "budget_id")
+	flowLogGroup := terraform.Output(t, terraformOptions, "vpc_flow_log_group_name")
 
-	// VPC Assertions
 	assert.NotEmpty(t, vpcID, "VPC ID should not be empty")
 	assert.Len(t, publicSubnetIDs, 2, "Should have 2 public subnets")
 	assert.Len(t, privateSubnetIDs, 2, "Should have 2 private subnets")
-
-	// CloudTrail Assertions
 	assert.NotEmpty(t, cloudtrailBucketARN, "CloudTrail bucket ARN should not be empty")
-
-	// GuardDuty Assertions
 	assert.NotEmpty(t, guarddutyDetectorID, "GuardDuty detector ID should not be empty")
-
-	// Budget Assertions
 	assert.NotEmpty(t, budgetID, "Budget ID should not be empty")
+	assert.NotEmpty(t, flowLogGroup, "VPC Flow Log group should not be empty")
 
 	t.Log("Basic landing zone test completed successfully")
 }
@@ -83,22 +69,15 @@ func TestLandingZoneBasic(t *testing.T) {
 func TestLandingZoneFull(t *testing.T) {
 	t.Parallel()
 
-	// Generate unique names for resources
-	uniqueID := random.UniqueId()
-	cloudtrailBucketName := "test-cloudtrail-full-" + uniqueID
-	guarddutyFindingsBucketName := "test-guardduty-findings-full-" + uniqueID
+	uniqueID := strings.ToLower(random.UniqueId())
+	namePrefix := "test-lzf-" + uniqueID
 
-	// Get AWS account ID
-	accountID := aws.GetAccountId(t)
-
-	// Configure Terraform options
 	terraformOptions := terraform.WithDefaultRetryableErrors(t, &terraform.Options{
 		TerraformDir: "..",
 		Vars: map[string]interface{}{
-			"account_id":                     accountID,
-			"region":                         "us-east-1",
-			"cloudtrail_bucket_name":         cloudtrailBucketName,
-			"guardduty_findings_bucket_name": guarddutyFindingsBucketName,
+			"name_prefix":                    namePrefix,
+			"cloudtrail_bucket_name":         "cloudtrail-logs",
+			"guardduty_findings_bucket_name": "guardduty-findings",
 			"enable_guardduty":               true,
 			"enable_budget_alerts":           true,
 			"enable_budget_actions":          false,
@@ -107,11 +86,13 @@ func TestLandingZoneFull(t *testing.T) {
 			"enable_security_hub":            true,
 			"enable_cis_standard":            true,
 			"enable_pci_standard":            false,
+			"enable_fsbp_standard":           true,
 			"enable_action_targets":          true,
 			"enable_macie":                   true,
-			"enable_macie_s3_classification": true,
-			"macie_s3_buckets_to_scan":       []string{"test-bucket-1", "test-bucket-2"},
-			"macie_excluded_file_extensions": []string{"jpg", "png", "gif"},
+			"enable_macie_s3_classification": false,
+			"enable_s3_block_public_access":  true,
+			"prevent_destroy":                false,
+			"kms_deletion_window_days":       7,
 			"tags": map[string]string{
 				"Environment": "test",
 				"Owner":       "terratest",
@@ -125,13 +106,9 @@ func TestLandingZoneFull(t *testing.T) {
 		},
 	})
 
-	// Clean up resources at the end of the test
 	defer terraform.Destroy(t, terraformOptions)
-
-	// Deploy the infrastructure
 	terraform.InitAndApply(t, terraformOptions)
 
-	// Get outputs
 	vpcID := terraform.Output(t, terraformOptions, "vpc_id")
 	publicSubnetIDs := terraform.OutputList(t, terraformOptions, "public_subnet_ids")
 	privateSubnetIDs := terraform.OutputList(t, terraformOptions, "private_subnet_ids")
@@ -139,27 +116,20 @@ func TestLandingZoneFull(t *testing.T) {
 	guarddutyDetectorID := terraform.Output(t, terraformOptions, "guardduty_detector_id")
 	budgetID := terraform.Output(t, terraformOptions, "budget_id")
 	securityHubEnabled := terraform.Output(t, terraformOptions, "security_hub_enabled")
+	fsbpEnabled := terraform.Output(t, terraformOptions, "fsbp_standard_enabled")
 	macieEnabled := terraform.Output(t, terraformOptions, "macie_enabled")
+	s3BlockEnabled := terraform.Output(t, terraformOptions, "s3_block_public_access_enabled")
 
-	// VPC Assertions
 	assert.NotEmpty(t, vpcID, "VPC ID should not be empty")
 	assert.Len(t, publicSubnetIDs, 2, "Should have 2 public subnets")
 	assert.Len(t, privateSubnetIDs, 2, "Should have 2 private subnets")
-
-	// CloudTrail Assertions
 	assert.NotEmpty(t, cloudtrailBucketARN, "CloudTrail bucket ARN should not be empty")
-
-	// GuardDuty Assertions
 	assert.NotEmpty(t, guarddutyDetectorID, "GuardDuty detector ID should not be empty")
-
-	// Budget Assertions
 	assert.NotEmpty(t, budgetID, "Budget ID should not be empty")
-
-	// Security Hub Assertions
 	assert.Equal(t, "true", securityHubEnabled, "Security Hub should be enabled")
-
-	// Macie Assertions
+	assert.Equal(t, "true", fsbpEnabled, "FSBP standard should be enabled")
 	assert.Equal(t, "true", macieEnabled, "Macie should be enabled")
+	assert.Equal(t, "true", s3BlockEnabled, "S3 Block Public Access should be enabled")
 
 	t.Log("Full landing zone test completed successfully")
 }

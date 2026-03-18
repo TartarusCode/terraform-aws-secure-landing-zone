@@ -4,13 +4,19 @@ variable "region" {
   default     = "us-east-1"
 }
 
+variable "name_prefix" {
+  description = "Prefix for all resource names"
+  type        = string
+  default     = "my-org-prod"
+}
+
 variable "tags" {
   description = "Tags to apply to all resources"
   type        = map(string)
   default = {
     Terraform   = "true"
-    Environment = "prod"
-    Owner       = "platform"
+    Environment = "production"
+    Owner       = "platform-team"
     Project     = "secure-landing-zone"
   }
 }
@@ -20,18 +26,6 @@ variable "vpc_cidr" {
   description = "CIDR block for VPC"
   type        = string
   default     = "10.0.0.0/16"
-}
-
-variable "public_subnet_count" {
-  description = "Number of public subnets to create (CIDRs will be calculated automatically)"
-  type        = number
-  default     = 2
-}
-
-variable "private_subnet_count" {
-  description = "Number of private subnets to create (CIDRs will be calculated automatically)"
-  type        = number
-  default     = 2
 }
 
 variable "public_subnet_cidrs" {
@@ -48,9 +42,9 @@ variable "private_subnet_cidrs" {
 
 # CloudTrail Configuration
 variable "cloudtrail_bucket_name" {
-  description = "Name of the S3 bucket for CloudTrail logs"
+  description = "Suffix for the S3 bucket name for CloudTrail logs"
   type        = string
-  default     = "my-org-cloudtrail-logs-full"
+  default     = "cloudtrail-logs"
 }
 
 variable "cloudtrail_enable_kms" {
@@ -112,12 +106,10 @@ variable "enable_guardduty" {
 }
 
 variable "guardduty_findings_bucket_name" {
-  description = "Name of the S3 bucket for GuardDuty findings"
+  description = "Suffix for the S3 bucket name for GuardDuty findings"
   type        = string
-  default     = "my-org-guardduty-findings-full"
+  default     = "guardduty-findings"
 }
-
-
 
 # Budget Configuration
 variable "enable_budget_alerts" {
@@ -142,4 +134,4 @@ variable "budget_alert_subscribers" {
   description = "List of email addresses to receive budget alerts"
   type        = list(string)
   default     = []
-} 
+}

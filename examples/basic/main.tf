@@ -1,9 +1,9 @@
 terraform {
-  required_version = ">= 1.5.0"
+  required_version = ">= 1.5.0, < 2.0.0"
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = ">= 6.0.0"
+      version = "~> 6.0"
     }
   }
 }
@@ -12,22 +12,15 @@ provider "aws" {
   region = var.region
 }
 
-# Get current AWS account ID
-data "aws_caller_identity" "current" {}
-
-# This is a placeholder for the landing zone module
-# It will be implemented in subsequent phases
 module "landing_zone" {
   source = "../.."
 
-  account_id             = data.aws_caller_identity.current.account_id
-  region                 = var.region
+  name_prefix            = var.name_prefix
   cloudtrail_bucket_name = var.cloudtrail_bucket_name
 
   tags = var.tags
 }
 
-# Outputs from the landing zone module
 output "vpc_id" {
   description = "The ID of the VPC"
   value       = module.landing_zone.vpc_id
@@ -46,4 +39,9 @@ output "private_subnet_ids" {
 output "cloudtrail_bucket_arn" {
   description = "ARN of the CloudTrail S3 bucket"
   value       = module.landing_zone.cloudtrail_bucket_arn
-} 
+}
+
+output "vpc_flow_log_group_name" {
+  description = "Name of the CloudWatch Log Group for VPC Flow Logs"
+  value       = module.landing_zone.vpc_flow_log_group_name
+}
