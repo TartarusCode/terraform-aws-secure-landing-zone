@@ -21,12 +21,20 @@ resource "aws_s3_bucket_public_access_block" "access_logs" {
   restrict_public_buckets = true
 }
 
+resource "aws_s3_bucket_versioning" "access_logs" {
+  bucket = aws_s3_bucket.access_logs.id
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
 resource "aws_s3_bucket_server_side_encryption_configuration" "access_logs" {
   bucket = aws_s3_bucket.access_logs.id
 
   rule {
     apply_server_side_encryption_by_default {
-      sse_algorithm = "AES256"
+      kms_master_key_id = var.s3_encryption_key_arn
+      sse_algorithm     = "aws:kms"
     }
   }
 }
@@ -264,6 +272,7 @@ resource "aws_cloudwatch_log_group" "cloudtrail" {
 
   name              = "/aws/cloudtrail/${var.name_prefix}"
   retention_in_days = var.log_retention_days
+  kms_key_id        = var.s3_encryption_key_arn
 
   tags = merge(var.tags, {
     Name = "${var.name_prefix}-cloudtrail-logs"

@@ -144,6 +144,7 @@ resource "aws_cloudwatch_log_group" "flow_logs" {
 
   name              = "/aws/vpc/${var.name_prefix}-flow-logs"
   retention_in_days = var.flow_log_retention
+  kms_key_id        = var.kms_key_arn != "" ? var.kms_key_arn : null
 
   tags = merge(var.tags, {
     Name = "${var.name_prefix}-vpc-flow-logs"

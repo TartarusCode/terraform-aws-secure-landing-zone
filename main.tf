@@ -48,6 +48,7 @@ module "vpc" {
   private_subnet_cidrs = var.private_subnet_cidrs
   enable_flow_logs     = var.enable_vpc_flow_logs
   flow_log_retention   = var.vpc_flow_log_retention
+  kms_key_arn          = module.kms.s3_encryption_key_arn
   tags                 = var.tags
 }
 

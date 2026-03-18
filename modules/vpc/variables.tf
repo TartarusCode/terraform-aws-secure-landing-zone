@@ -87,3 +87,9 @@ variable "flow_log_retention" {
   type        = number
   default     = 90
 }
+
+variable "kms_key_arn" {
+  description = "ARN of a KMS key for encrypting the CloudWatch log group"
+  type        = string
+  default     = ""
+}

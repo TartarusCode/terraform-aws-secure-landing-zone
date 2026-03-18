@@ -63,13 +63,22 @@ resource "aws_s3_bucket_public_access_block" "guardduty_access_logs" {
   restrict_public_buckets = true
 }
 
+resource "aws_s3_bucket_versioning" "guardduty_access_logs" {
+  count  = local.create_bucket ? 1 : 0
+  bucket = aws_s3_bucket.guardduty_access_logs[0].id
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
 resource "aws_s3_bucket_server_side_encryption_configuration" "guardduty_access_logs" {
   count  = local.create_bucket ? 1 : 0
   bucket = aws_s3_bucket.guardduty_access_logs[0].id
 
   rule {
     apply_server_side_encryption_by_default {
-      sse_algorithm = "AES256"
+      kms_master_key_id = var.s3_encryption_key_arn
+      sse_algorithm     = "aws:kms"
     }
   }
 }
