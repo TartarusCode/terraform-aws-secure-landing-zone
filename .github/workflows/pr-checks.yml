@@ -30,6 +30,7 @@ jobs:
   # ---------------------------------------------------------------
   fmt:
     name: Terraform Format
+    if: github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -46,6 +47,7 @@ jobs:
 
   lint:
     name: TFLint
+    if: github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -74,6 +76,7 @@ jobs:
   # ---------------------------------------------------------------
   validate:
     name: Validate (${{ matrix.target }})
+    if: github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     needs: [fmt]
 
@@ -123,6 +126,7 @@ jobs:
   # ---------------------------------------------------------------
   security-scan:
     name: Trivy Security Scan
+    if: github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     needs: [fmt]
 
@@ -151,6 +155,7 @@ jobs:
   # ---------------------------------------------------------------
   test-compile:
     name: Test Suite Compile Check
+    if: github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     needs: [fmt]
 
@@ -183,6 +188,7 @@ jobs:
   # ---------------------------------------------------------------
   documentation:
     name: Documentation Check
+    if: github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
 
     steps:
@@ -247,7 +253,7 @@ jobs:
   pr-status:
     name: PR Status
     runs-on: ubuntu-latest
-    if: always()
+    if: always() && github.actor != 'dependabot[bot]'
     needs: [fmt, lint, validate, security-scan, test-compile, documentation]
     steps:
       - name: Check results

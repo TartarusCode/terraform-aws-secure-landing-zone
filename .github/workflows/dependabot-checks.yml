@@ -1,0 +1,181 @@
+name: Dependabot Checks
+
+on:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: dependabot-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+  TERRAFORM_VERSION: "1.14.7"
+
+jobs:
+  detect:
+    name: Detect Dependabot Ecosystem
+    if: github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    outputs:
+      is_terraform: ${{ steps.check.outputs.is_terraform }}
+      is_gomod: ${{ steps.check.outputs.is_gomod }}
+      is_actions: ${{ steps.check.outputs.is_actions }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Detect changed ecosystems
+        id: check
+        run: |
+          CHANGED=$(gh pr diff ${{ github.event.pull_request.number }} --name-only 2>/dev/null || git diff --name-only origin/main...HEAD)
+          echo "Changed files:"
+          echo "$CHANGED"
+
+          if echo "$CHANGED" | grep -qE '\.terraform\.lock\.hcl$'; then
+            echo "is_terraform=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_terraform=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          if echo "$CHANGED" | grep -qE '(go\.mod|go\.sum)$'; then
+            echo "is_gomod=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_gomod=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          if echo "$CHANGED" | grep -qE '\.github/workflows/'; then
+            echo "is_actions=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_actions=false" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  # -----------------------------------------------------------------
+  # Terraform provider updates: init + validate only
+  # -----------------------------------------------------------------
+  terraform-validate:
+    name: Validate (${{ matrix.target }})
+    needs: [detect]
+    if: needs.detect.outputs.is_terraform == 'true'
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [root, basic, full, advanced]
+        include:
+          - target: root
+            dir: "."
+          - target: basic
+            dir: "examples/basic"
+          - target: full
+            dir: "examples/full"
+          - target: advanced
+            dir: "examples/advanced"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
+      - name: Terraform Init
+        working-directory: ${{ matrix.dir }}
+        run: terraform init -backend=false
+
+      - name: Terraform Validate
+        working-directory: ${{ matrix.dir }}
+        run: terraform validate
+
+  # -----------------------------------------------------------------
+  # Go module updates: tidy check + compile
+  # -----------------------------------------------------------------
+  go-validate:
+    name: Go Module Check
+    needs: [detect]
+    if: needs.detect.outputs.is_gomod == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache-dependency-path: test/go.sum
+
+      - name: Verify dependencies
+        working-directory: test
+        run: |
+          go mod tidy -diff
+          go mod verify
+
+      - name: Compile test suite
+        working-directory: test
+        run: go build ./...
+
+  # -----------------------------------------------------------------
+  # GitHub Actions updates: just validate workflow YAML syntax
+  # -----------------------------------------------------------------
+  actions-validate:
+    name: Workflow Syntax Check
+    needs: [detect]
+    if: needs.detect.outputs.is_actions == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate YAML syntax
+        run: |
+          pip install --quiet pyyaml
+          for f in .github/workflows/*.yml; do
+            python -c "import yaml; yaml.safe_load(open('$f'))" && echo "  OK: $f" || exit 1
+          done
+
+  # -----------------------------------------------------------------
+  # Summary gate
+  # -----------------------------------------------------------------
+  dependabot-status:
+    name: Dependabot Status
+    runs-on: ubuntu-latest
+    if: always() && github.actor == 'dependabot[bot]'
+    needs: [detect, terraform-validate, go-validate, actions-validate]
+    steps:
+      - name: Check results
+        run: |
+          echo "=== Dependabot PR Check Results ==="
+          echo "terraform-validate: ${{ needs.terraform-validate.result }}"
+          echo "go-validate:        ${{ needs.go-validate.result }}"
+          echo "actions-validate:   ${{ needs.actions-validate.result }}"
+
+          FAILED=false
+          for result in "${{ needs.terraform-validate.result }}" \
+                        "${{ needs.go-validate.result }}" \
+                        "${{ needs.actions-validate.result }}"; do
+            if [[ "$result" == "failure" ]]; then
+              FAILED=true
+            fi
+          done
+
+          if [[ "$FAILED" == "true" ]]; then
+            echo ""
+            echo "One or more checks failed."
+            exit 1
+          fi
+
+          echo ""
+          echo "All Dependabot checks passed."
