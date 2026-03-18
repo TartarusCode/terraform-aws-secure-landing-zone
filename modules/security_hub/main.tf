@@ -1,9 +1,19 @@
-# Security Hub administrator account
+terraform {
+  required_version = ">= 1.5.0, < 2.0.0"
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 6.0"
+    }
+  }
+}
+
+data "aws_region" "current" {}
+
 resource "aws_securityhub_account" "main" {
   count = var.enable_security_hub ? 1 : 0
 }
 
-# Security Hub standards
 resource "aws_securityhub_standards_subscription" "cis_aws_foundations" {
   count = var.enable_security_hub && var.enable_cis_standard ? 1 : 0
 
@@ -20,7 +30,14 @@ resource "aws_securityhub_standards_subscription" "pci_dss" {
   depends_on = [aws_securityhub_account.main]
 }
 
-# Security Hub actions
+resource "aws_securityhub_standards_subscription" "fsbp" {
+  count = var.enable_security_hub && var.enable_fsbp_standard ? 1 : 0
+
+  standards_arn = "arn:aws:securityhub:${data.aws_region.current.region}::standards/aws-foundational-security-best-practices/v/1.0.0"
+
+  depends_on = [aws_securityhub_account.main]
+}
+
 resource "aws_securityhub_action_target" "sns" {
   count = var.enable_security_hub && var.enable_action_targets ? 1 : 0
 
@@ -31,7 +48,6 @@ resource "aws_securityhub_action_target" "sns" {
   depends_on = [aws_securityhub_account.main]
 }
 
-# Security Hub insights
 resource "aws_securityhub_insight" "high_severity_findings" {
   count = var.enable_security_hub ? 1 : 0
 
@@ -63,7 +79,3 @@ resource "aws_securityhub_insight" "failed_compliance_checks" {
 
   depends_on = [aws_securityhub_account.main]
 }
-
-# Data sources
-data "aws_region" "current" {}
-data "aws_caller_identity" "current" {} 

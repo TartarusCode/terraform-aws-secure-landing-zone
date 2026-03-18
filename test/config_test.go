@@ -1,10 +1,10 @@
 package test
 
 import (
+	"strings"
 	"testing"
 	"time"
 
-	"github.com/gruntwork-io/terratest/modules/aws"
 	"github.com/gruntwork-io/terratest/modules/random"
 	"github.com/gruntwork-io/terratest/modules/terraform"
 	"github.com/stretchr/testify/assert"
@@ -13,16 +13,35 @@ import (
 func TestConfigModule(t *testing.T) {
 	t.Parallel()
 
-	uniqueID := random.UniqueId()
-	accountID := aws.GetAccountId(t)
+	uniqueID := strings.ToLower(random.UniqueId())
+	namePrefix := "test-cfg-" + uniqueID
 	bucketName := "test-config-" + uniqueID
+
+	// Deploy KMS module first to get the encryption key ARN
+	kmsOptions := terraform.WithDefaultRetryableErrors(t, &terraform.Options{
+		TerraformDir: "../modules/kms",
+		Vars: map[string]interface{}{
+			"name_prefix":              namePrefix,
+			"kms_deletion_window_days": 7,
+			"tags": map[string]string{
+				"Environment": "test",
+			},
+		},
+		MaxRetries:         3,
+		TimeBetweenRetries: 5 * time.Second,
+	})
+
+	defer terraform.Destroy(t, kmsOptions)
+	terraform.InitAndApply(t, kmsOptions)
+
+	snsKeyARN := terraform.Output(t, kmsOptions, "sns_encryption_key_arn")
 
 	terraformOptions := terraform.WithDefaultRetryableErrors(t, &terraform.Options{
 		TerraformDir: "../modules/config",
 		Vars: map[string]interface{}{
-			"account_id":         accountID,
-			"region":             "us-east-1",
-			"config_bucket_name": bucketName,
+			"name_prefix":            namePrefix,
+			"config_bucket_name":     bucketName,
+			"sns_encryption_key_arn": snsKeyARN,
 			"config_rules": map[string]string{
 				"s3-bucket-public-read-prohibited":  "S3_BUCKET_PUBLIC_READ_PROHIBITED",
 				"s3-bucket-public-write-prohibited": "S3_BUCKET_PUBLIC_WRITE_PROHIBITED",
@@ -40,7 +59,6 @@ func TestConfigModule(t *testing.T) {
 	defer terraform.Destroy(t, terraformOptions)
 	terraform.InitAndApply(t, terraformOptions)
 
-	// Assertions
 	recorderName := terraform.Output(t, terraformOptions, "recorder_name")
 	ruleARNs := terraform.OutputMap(t, terraformOptions, "rule_arns")
 

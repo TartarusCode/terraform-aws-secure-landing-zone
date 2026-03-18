@@ -1,17 +1,21 @@
-# Data source for availability zones
+terraform {
+  required_version = ">= 1.5.0, < 2.0.0"
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 6.0"
+    }
+  }
+}
+
 data "aws_availability_zones" "available" {
   state = "available"
 }
 
-# Dynamic CIDR calculation
 locals {
-  # Calculate subnet mask based on VPC CIDR
   vpc_cidr_bits = tonumber(split("/", var.vpc_cidr)[1])
+  subnet_bits   = 8
 
-  # Calculate subnet size (default /24 for subnets)
-  subnet_bits = 8 # /24 = 256 IPs per subnet
-
-  # Use provided CIDRs or calculate dynamically
   public_subnet_cidrs = length(var.public_subnet_cidrs) > 0 ? var.public_subnet_cidrs : [
     for i in range(var.public_subnet_count) :
     cidrsubnet(var.vpc_cidr, local.subnet_bits, i)
@@ -22,15 +26,12 @@ locals {
     cidrsubnet(var.vpc_cidr, local.subnet_bits, var.public_subnet_count + i)
   ]
 
-  # Validate that we don't exceed VPC capacity
   total_subnets = var.public_subnet_count + var.private_subnet_count
   max_subnets   = pow(2, 32 - local.vpc_cidr_bits - local.subnet_bits)
 }
 
-# Validation to ensure we don't exceed VPC capacity
 resource "terraform_data" "cidr_validation" {
   input = {
-    # This will fail if the condition is false
     valid = local.total_subnets <= local.max_subnets ? "true" : "false"
   }
 
@@ -42,18 +43,16 @@ resource "terraform_data" "cidr_validation" {
   }
 }
 
-# VPC
 resource "aws_vpc" "main" {
   cidr_block           = var.vpc_cidr
   enable_dns_hostnames = true
   enable_dns_support   = true
 
   tags = merge(var.tags, {
-    Name = "landing-zone-vpc"
+    Name = "${var.name_prefix}-vpc"
   })
 }
 
-# Public subnets
 resource "aws_subnet" "public" {
   count             = length(local.public_subnet_cidrs)
   vpc_id            = aws_vpc.main.id
@@ -63,12 +62,11 @@ resource "aws_subnet" "public" {
   map_public_ip_on_launch = var.map_public_ip_on_launch
 
   tags = merge(var.tags, {
-    Name = "public-subnet-${count.index + 1}"
+    Name = "${var.name_prefix}-public-subnet-${count.index + 1}"
     Type = "Public"
   })
 }
 
-# Private subnets
 resource "aws_subnet" "private" {
   count             = length(local.private_subnet_cidrs)
   vpc_id            = aws_vpc.main.id
@@ -76,43 +74,39 @@ resource "aws_subnet" "private" {
   availability_zone = data.aws_availability_zones.available.names[count.index]
 
   tags = merge(var.tags, {
-    Name = "private-subnet-${count.index + 1}"
+    Name = "${var.name_prefix}-private-subnet-${count.index + 1}"
     Type = "Private"
   })
 }
 
-# Internet Gateway
 resource "aws_internet_gateway" "main" {
   vpc_id = aws_vpc.main.id
 
   tags = merge(var.tags, {
-    Name = "landing-zone-igw"
+    Name = "${var.name_prefix}-igw"
   })
 }
 
-# Elastic IP for NAT Gateway
 resource "aws_eip" "nat" {
   domain     = "vpc"
   depends_on = [aws_internet_gateway.main]
 
   tags = merge(var.tags, {
-    Name = "landing-zone-nat-eip"
+    Name = "${var.name_prefix}-nat-eip"
   })
 }
 
-# NAT Gateway
 resource "aws_nat_gateway" "main" {
   allocation_id = aws_eip.nat.id
   subnet_id     = aws_subnet.public[0].id
 
   tags = merge(var.tags, {
-    Name = "landing-zone-nat-gateway"
+    Name = "${var.name_prefix}-nat-gateway"
   })
 
   depends_on = [aws_internet_gateway.main]
 }
 
-# Route table for public subnets
 resource "aws_route_table" "public" {
   vpc_id = aws_vpc.main.id
 
@@ -122,11 +116,10 @@ resource "aws_route_table" "public" {
   }
 
   tags = merge(var.tags, {
-    Name = "public-route-table"
+    Name = "${var.name_prefix}-public-rt"
   })
 }
 
-# Route table for private subnets
 resource "aws_route_table" "private" {
   vpc_id = aws_vpc.main.id
 
@@ -136,20 +129,95 @@ resource "aws_route_table" "private" {
   }
 
   tags = merge(var.tags, {
-    Name = "private-route-table"
+    Name = "${var.name_prefix}-private-rt"
   })
 }
 
-# Route table associations for public subnets
 resource "aws_route_table_association" "public" {
   count          = length(aws_subnet.public)
   subnet_id      = aws_subnet.public[count.index].id
   route_table_id = aws_route_table.public.id
 }
 
-# Route table associations for private subnets
 resource "aws_route_table_association" "private" {
   count          = length(aws_subnet.private)
   subnet_id      = aws_subnet.private[count.index].id
   route_table_id = aws_route_table.private.id
-} 
+}
+
+# -----------------------------------------------------------------------------
+# VPC Flow Logs
+# -----------------------------------------------------------------------------
+
+resource "aws_cloudwatch_log_group" "flow_logs" {
+  count = var.enable_flow_logs ? 1 : 0
+
+  name              = "/aws/vpc/${var.name_prefix}-flow-logs"
+  retention_in_days = var.flow_log_retention
+  kms_key_id        = var.kms_key_arn != "" ? var.kms_key_arn : null
+
+  tags = merge(var.tags, {
+    Name = "${var.name_prefix}-vpc-flow-logs"
+  })
+}
+
+resource "aws_iam_role" "flow_logs" {
+  count = var.enable_flow_logs ? 1 : 0
+
+  name = "${var.name_prefix}-vpc-flow-logs-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "vpc-flow-logs.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = merge(var.tags, {
+    Name = "${var.name_prefix}-vpc-flow-logs-role"
+  })
+}
+
+resource "aws_iam_role_policy" "flow_logs" {
+  count = var.enable_flow_logs ? 1 : 0
+
+  name = "${var.name_prefix}-vpc-flow-logs-policy"
+  role = aws_iam_role.flow_logs[0].id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents",
+          "logs:DescribeLogGroups",
+          "logs:DescribeLogStreams"
+        ]
+        Resource = "${aws_cloudwatch_log_group.flow_logs[0].arn}:*"
+      }
+    ]
+  })
+}
+
+resource "aws_flow_log" "main" {
+  count = var.enable_flow_logs ? 1 : 0
+
+  vpc_id               = aws_vpc.main.id
+  traffic_type         = "ALL"
+  log_destination      = aws_cloudwatch_log_group.flow_logs[0].arn
+  log_destination_type = "cloud-watch-logs"
+  iam_role_arn         = aws_iam_role.flow_logs[0].arn
+
+  tags = merge(var.tags, {
+    Name = "${var.name_prefix}-vpc-flow-log"
+  })
+}

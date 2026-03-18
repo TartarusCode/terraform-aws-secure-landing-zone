@@ -1,26 +1,16 @@
-variable "account_id" {
-  description = "AWS Account ID"
+variable "name_prefix" {
+  description = "Prefix for all resource names"
   type        = string
-}
-
-variable "region" {
-  description = "AWS region"
-  type        = string
-  default     = "us-east-1"
 }
 
 variable "tags" {
   description = "Tags to apply to all resources"
   type        = map(string)
-  default = {
-    Terraform   = "true"
-    Environment = "prod"
-    Owner       = "platform"
-  }
+  default     = {}
 }
 
 variable "prevent_destroy" {
-  description = "Whether to prevent destruction of critical resources (S3 buckets, KMS keys). Set to false for testing environments."
+  description = "Whether to prevent destruction of critical resources (S3 buckets). Set to false for testing environments."
   type        = bool
   default     = true
 }
@@ -28,7 +18,6 @@ variable "prevent_destroy" {
 variable "cloudtrail_bucket_name" {
   description = "Name of the S3 bucket for CloudTrail logs"
   type        = string
-  default     = "cloudtrail-logs"
 }
 
 variable "cloudtrail_enable_kms" {
@@ -40,4 +29,17 @@ variable "cloudtrail_enable_kms" {
 variable "s3_encryption_key_arn" {
   description = "ARN of the KMS key for S3 encryption"
   type        = string
-} 
+}
+
+variable "enable_cloudwatch_logs" {
+  description = "Enable CloudWatch Logs integration for CloudTrail"
+  type        = bool
+  default     = true
+}
+
+variable "log_retention_days" {
+  description = "Number of days to retain CloudTrail logs in CloudWatch"
+  type        = number
+  default     = 90
+}
+

@@ -4,10 +4,16 @@ variable "region" {
   default     = "us-east-1"
 }
 
-variable "cloudtrail_bucket_name" {
-  description = "Name of the S3 bucket for CloudTrail logs"
+variable "name_prefix" {
+  description = "Prefix for all resource names"
   type        = string
-  default     = "my-org-cloudtrail-logs-basic"
+  default     = "my-org-dev"
+}
+
+variable "cloudtrail_bucket_name" {
+  description = "Suffix for the S3 bucket name for CloudTrail logs"
+  type        = string
+  default     = "cloudtrail-logs"
 }
 
 variable "tags" {
@@ -18,4 +24,4 @@ variable "tags" {
     Owner       = "platform-team"
     Project     = "landing-zone"
   }
-} 
+}

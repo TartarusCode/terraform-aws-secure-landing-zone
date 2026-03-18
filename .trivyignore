@@ -1,0 +1,4 @@
+# Access-log buckets cannot log to themselves (creates infinite recursion).
+# The primary data buckets (CloudTrail, GuardDuty) DO have logging enabled
+# pointing to these access-log buckets.
+AVD-AWS-0089

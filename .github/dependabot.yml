@@ -1,0 +1,91 @@
+version: 2
+
+updates:
+  # GitHub Actions — keep workflow action versions current
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "ci"
+    labels:
+      - dependencies
+      - ci
+    reviewers:
+      - platform-team
+
+  # Go modules — keep Terratest and test dependencies current
+  - package-ecosystem: gomod
+    directory: /test
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps"
+    labels:
+      - dependencies
+      - go
+    reviewers:
+      - platform-team
+    groups:
+      terratest:
+        patterns:
+          - "github.com/gruntwork-io/*"
+      testing:
+        patterns:
+          - "github.com/stretchr/*"
+
+  # Terraform providers — keep AWS provider lock file current
+  - package-ecosystem: terraform
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps"
+    labels:
+      - dependencies
+      - terraform
+    reviewers:
+      - platform-team
+
+  # Terraform providers in examples
+  - package-ecosystem: terraform
+    directory: /examples/basic
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "deps"
+    labels:
+      - dependencies
+      - terraform
+      - examples
+
+  - package-ecosystem: terraform
+    directory: /examples/full
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "deps"
+    labels:
+      - dependencies
+      - terraform
+      - examples
+
+  - package-ecosystem: terraform
+    directory: /examples/advanced
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "deps"
+    labels:
+      - dependencies
+      - terraform
+      - examples

@@ -1,8 +1,23 @@
-# IAM Roles
-resource "aws_iam_role" "roles" {
-  for_each = { for role in var.iam_roles : role.name => role }
+terraform {
+  required_version = ">= 1.5.0, < 2.0.0"
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 6.0"
+    }
+  }
+}
 
-  name        = each.value.name
+data "aws_caller_identity" "current" {}
+
+locals {
+  roles_map = { for role in var.iam_roles : role.name => role }
+}
+
+resource "aws_iam_role" "roles" {
+  for_each = local.roles_map
+
+  name        = "${var.name_prefix}-${each.value.name}"
   description = each.value.description
 
   assume_role_policy = jsonencode({
@@ -12,7 +27,7 @@ resource "aws_iam_role" "roles" {
         Action = "sts:AssumeRole"
         Effect = "Allow"
         Principal = {
-          AWS = "arn:aws:iam::${var.account_id}:root"
+          AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
         }
       }
     ]
@@ -21,11 +36,10 @@ resource "aws_iam_role" "roles" {
   permissions_boundary = each.value.permission_boundary
 
   tags = merge(var.tags, {
-    Name = each.value.name
+    Name = "${var.name_prefix}-${each.value.name}"
   })
 }
 
-# IAM Role Policy Attachments
 resource "aws_iam_role_policy_attachment" "managed_policies" {
   for_each = {
     for role in var.iam_roles : role.name => role
@@ -36,25 +50,23 @@ resource "aws_iam_role_policy_attachment" "managed_policies" {
   policy_arn = each.value.policy_arn
 }
 
-# IAM Inline Policies
 resource "aws_iam_role_policy" "inline_policies" {
   for_each = {
     for role in var.iam_roles : role.name => role
     if role.inline_policy != null
   }
 
-  name   = "${each.key}-inline-policy"
+  name   = "${var.name_prefix}-${each.key}-inline-policy"
   role   = aws_iam_role.roles[each.key].id
   policy = each.value.inline_policy
 }
 
-# IAM Instance Profile for EC2 (if needed)
 resource "aws_iam_instance_profile" "ec2_profile" {
-  count = var.create_ec2_instance_profile ? 1 : 0
-  name  = "landing-zone-ec2-profile"
-  role  = try(aws_iam_role.roles["EC2Role"].name, aws_iam_role.roles["PowerUserRestrictedIAM"].name)
+  count = var.create_ec2_instance_profile && contains(keys(local.roles_map), var.ec2_instance_profile_role) ? 1 : 0
+  name  = "${var.name_prefix}-ec2-profile"
+  role  = aws_iam_role.roles[var.ec2_instance_profile_role].name
 
   tags = merge(var.tags, {
-    Name = "landing-zone-ec2-profile"
+    Name = "${var.name_prefix}-ec2-profile"
   })
-} 
+}

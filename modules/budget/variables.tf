@@ -1,22 +1,12 @@
-variable "account_id" {
-  description = "AWS Account ID"
+variable "name_prefix" {
+  description = "Prefix for all resource names"
   type        = string
-}
-
-variable "region" {
-  description = "AWS region"
-  type        = string
-  default     = "us-east-1"
 }
 
 variable "tags" {
   description = "Tags to apply to all resources"
   type        = map(string)
-  default = {
-    Terraform   = "true"
-    Environment = "prod"
-    Owner       = "platform"
-  }
+  default     = {}
 }
 
 variable "enable_budget_alerts" {
@@ -26,7 +16,7 @@ variable "enable_budget_alerts" {
 }
 
 variable "enable_budget_actions" {
-  description = "Enable budget actions for automated responses"
+  description = "Enable budget actions for automated responses (requires at least one subscriber)"
   type        = bool
   default     = false
 }
@@ -43,7 +33,13 @@ variable "budget_alert_subscribers" {
   default     = []
 }
 
+variable "notification_thresholds" {
+  description = "List of budget threshold percentages to trigger notifications"
+  type        = list(number)
+  default     = [80, 100, 120, 150, 200]
+}
+
 variable "sns_encryption_key_arn" {
   description = "ARN of the KMS key for SNS encryption"
   type        = string
-} 
+}

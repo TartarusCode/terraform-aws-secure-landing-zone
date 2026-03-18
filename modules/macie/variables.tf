@@ -1,18 +1,7 @@
-variable "account_id" {
-  description = "AWS Account ID"
-  type        = string
-}
-
-variable "region" {
-  description = "AWS region"
-  type        = string
-  default     = "us-east-1"
-}
-
 variable "enable_macie" {
   description = "Enable AWS Macie"
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "macie_finding_publishing_frequency" {
@@ -55,8 +44,3 @@ variable "custom_data_identifiers" {
   default = {}
 }
 
-variable "tags" {
-  description = "Tags to apply to all resources"
-  type        = map(string)
-  default     = {}
-} 

@@ -4,22 +4,16 @@ variable "region" {
   default     = "us-east-1"
 }
 
+variable "name_prefix" {
+  description = "Prefix for all resource names"
+  type        = string
+  default     = "my-org-adv"
+}
+
 variable "vpc_cidr" {
   description = "CIDR block for VPC"
   type        = string
   default     = "10.0.0.0/16"
-}
-
-variable "public_subnet_count" {
-  description = "Number of public subnets to create (CIDRs will be calculated automatically)"
-  type        = number
-  default     = 2
-}
-
-variable "private_subnet_count" {
-  description = "Number of private subnets to create (CIDRs will be calculated automatically)"
-  type        = number
-  default     = 2
 }
 
 variable "public_subnet_cidrs" {
@@ -35,23 +29,21 @@ variable "private_subnet_cidrs" {
 }
 
 variable "cloudtrail_bucket_name" {
-  description = "Name of the S3 bucket for CloudTrail logs"
+  description = "Suffix for the S3 bucket name for CloudTrail logs"
   type        = string
-  default     = "my-org-cloudtrail-logs-advanced"
+  default     = "cloudtrail-logs"
 }
 
 variable "guardduty_findings_bucket_name" {
-  description = "Name of the S3 bucket for GuardDuty findings"
+  description = "Suffix for the S3 bucket name for GuardDuty findings"
   type        = string
-  default     = "my-org-guardduty-findings-advanced"
+  default     = "guardduty-findings"
 }
-
-
 
 variable "budget_limit_usd" {
   description = "Monthly budget limit in USD"
   type        = number
-  default     = 1000
+  default     = 2000
 }
 
 variable "budget_alert_subscribers" {
@@ -76,9 +68,10 @@ variable "tags" {
   description = "Tags to apply to all resources"
   type        = map(string)
   default = {
-    Environment = "advanced"
-    Project     = "secure-landing-zone"
-    Owner       = "platform-team"
-    CostCenter  = "security"
+    Environment        = "advanced"
+    Project            = "secure-landing-zone"
+    Owner              = "platform-team"
+    CostCenter         = "security"
+    DataClassification = "confidential"
   }
-} 
+}

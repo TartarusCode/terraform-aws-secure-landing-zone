@@ -1,32 +1,21 @@
-variable "account_id" {
-  description = "AWS Account ID"
+variable "name_prefix" {
+  description = "Prefix for all resource names"
   type        = string
-}
-
-variable "region" {
-  description = "AWS region"
-  type        = string
-  default     = "us-east-1"
 }
 
 variable "tags" {
   description = "Tags to apply to all resources"
   type        = map(string)
-  default = {
-    Terraform   = "true"
-    Environment = "prod"
-    Owner       = "platform"
-  }
+  default     = {}
 }
 
 variable "config_bucket_name" {
   description = "Name of the S3 bucket for AWS Config logs"
   type        = string
-  default     = "config-logs"
 }
 
 variable "config_rules" {
-  description = "Map of AWS Config rule names to rule configurations"
+  description = "Map of AWS Config rule names to managed rule source identifiers"
   type        = map(string)
   default = {
     "s3-bucket-public-read-prohibited"  = "S3_BUCKET_PUBLIC_READ_PROHIBITED"
@@ -40,4 +29,4 @@ variable "config_rules" {
 variable "sns_encryption_key_arn" {
   description = "ARN of the KMS key for SNS encryption"
   type        = string
-} 
+}
