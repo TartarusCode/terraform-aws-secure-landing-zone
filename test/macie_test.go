@@ -20,11 +20,6 @@ func TestMacieModule(t *testing.T) {
 			"s3_buckets_to_scan":                 []string{},
 			"excluded_file_extensions":           []string{"jpg", "png", "gif"},
 			"custom_data_identifiers":            map[string]interface{}{},
-			"tags": map[string]string{
-				"Environment": "test",
-				"Owner":       "terratest",
-				"Project":     "macie-test",
-			},
 		},
 		MaxRetries:         3,
 		TimeBetweenRetries: 5 * time.Second,

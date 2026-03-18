@@ -12,18 +12,6 @@ variable "name_prefix" {
   }
 }
 
-variable "account_id" {
-  description = "AWS Account ID (auto-detected if not provided)"
-  type        = string
-  default     = ""
-}
-
-variable "region" {
-  description = "AWS region (auto-detected from provider if not provided)"
-  type        = string
-  default     = ""
-}
-
 variable "tags" {
   description = "Tags to apply to all resources"
   type        = map(string)

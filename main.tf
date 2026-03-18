@@ -8,14 +8,6 @@ terraform {
   }
 }
 
-data "aws_caller_identity" "current" {}
-data "aws_region" "current" {}
-
-locals {
-  account_id = coalesce(var.account_id, data.aws_caller_identity.current.account_id)
-  region     = coalesce(var.region, data.aws_region.current.region)
-}
-
 # KMS Module
 module "kms" {
   source = "./modules/kms"
@@ -124,7 +116,6 @@ module "security_hub" {
   enable_pci_standard   = var.enable_pci_standard
   enable_fsbp_standard  = var.enable_fsbp_standard
   enable_action_targets = var.enable_action_targets
-  tags                  = var.tags
 }
 
 # Macie Module
@@ -137,5 +128,4 @@ module "macie" {
   s3_buckets_to_scan                 = var.macie_s3_buckets_to_scan
   excluded_file_extensions           = var.macie_excluded_file_extensions
   custom_data_identifiers            = var.macie_custom_data_identifiers
-  tags                               = var.tags
 }

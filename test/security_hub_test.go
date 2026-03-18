@@ -19,11 +19,6 @@ func TestSecurityHubModule(t *testing.T) {
 			"enable_pci_standard":   false,
 			"enable_fsbp_standard":  true,
 			"enable_action_targets": true,
-			"tags": map[string]string{
-				"Environment": "test",
-				"Owner":       "terratest",
-				"Project":     "security-hub-test",
-			},
 		},
 		MaxRetries:         3,
 		TimeBetweenRetries: 5 * time.Second,

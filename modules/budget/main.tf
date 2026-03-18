@@ -1,3 +1,13 @@
+terraform {
+  required_version = ">= 1.5.0, < 2.0.0"
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 6.0"
+    }
+  }
+}
+
 locals {
   has_subscribers  = length(var.budget_alert_subscribers) > 0
   enable_actions   = var.enable_budget_alerts && var.enable_budget_actions && local.has_subscribers

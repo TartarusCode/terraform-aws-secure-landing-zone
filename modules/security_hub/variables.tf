@@ -28,8 +28,3 @@ variable "enable_action_targets" {
   default     = true
 }
 
-variable "tags" {
-  description = "Tags to apply to all resources"
-  type        = map(string)
-  default     = {}
-}

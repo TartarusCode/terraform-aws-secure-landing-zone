@@ -43,8 +43,3 @@ variable "log_retention_days" {
   default     = 90
 }
 
-variable "kms_key_arn" {
-  description = "ARN of the KMS key for encrypting CloudWatch log groups and access-log buckets"
-  type        = string
-  default     = ""
-}
